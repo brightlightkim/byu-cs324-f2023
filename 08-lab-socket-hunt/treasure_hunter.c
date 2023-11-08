@@ -1,6 +1,6 @@
 // Replace PUT_USERID_HERE with your actual BYU CS user id, which you can find
 // by running `id -u` on a CS lab machine.
-#define USERID 383650543
+#define USERID 1823698787
 
 #include <stdio.h>
 #include <string.h>
@@ -138,7 +138,7 @@ int main(int argc, char *argv[])
 		{
 		case 0:
 			break;
-			
+
 		case 1:
 			if (af == AF_INET)
 			{
