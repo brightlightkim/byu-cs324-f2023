@@ -33,6 +33,16 @@ int main(int argc, char *argv[]) {
         content[content_length] = '\0';
         setenv("CONTENT_LENGTH", content_length_str, 1);
 
+        // Create the response body
+        char *response_body = malloc(1024);
+        sprintf(response_body, "Hello CS324\nQuery string: %s\nRequest body: %s\n", query_string, content);
+        // Send "Content-Type" and "Content-Length" headers of the HTTP response to the client
+        printf("Content-Type: text/plain\r\n");
+        printf("Content-Length: %ld", strlen(response_body));
+        printf("\r\n\r\n");
+        // Send the response body
+        printf("%s", response_body);
+
         // Execute the program in the child process
         execve(argv[0], argv, NULL);
 
