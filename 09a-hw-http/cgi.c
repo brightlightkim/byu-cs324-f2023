@@ -10,10 +10,7 @@ int main(int argc, char *argv[]) {
     // Fork to create a child process
     pid_t pid = fork();
 
-    if (pid < 0) {
-        perror("fork failed");
-        exit(1);
-    } else if (pid == 0) {
+    if (pid == 0) {
         // Child process
         // Duplicate the socket onto standard input for reading the request body from the client
         dup2(STDIN_FILENO, 0);
@@ -49,11 +46,7 @@ int main(int argc, char *argv[]) {
         // If execve returns, it must have failed
         perror("execve failed");
         exit(1);
-    } else {
-        // Parent process
-        // Wait for the child process to finish
-        waitpid(pid, NULL, 0);
-    }
+    } 
 
     return 0;
 }
