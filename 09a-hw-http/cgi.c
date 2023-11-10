@@ -10,7 +10,7 @@ int main(int argc, char *argv[]) {
 
     // Set the value of the QUERY_STRING environment variable to the value of the query string sent by the client
     char *query_string = getenv("QUERY_STRING");
-    printf(query_string);
+    printf("%s", query_string);
     // Set the value of the CONTENT_LENGTH environment variable to the value of the Content-Length header sent by the client
     // char *content_length_str = getenv("CONTENT_LENGTH");
     // int content_length = atoi(content_length_str);
