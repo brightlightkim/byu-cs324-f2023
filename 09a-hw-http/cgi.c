@@ -4,16 +4,13 @@
 #include <string.h>
 
 int main(int argc, char *argv[]) {
-    // Send the first line and initial headers associated with the HTTP response
-    printf("Content-Type: text/html\n\n");
-
-
     // Set the value of the QUERY_STRING environment variable to the value of the query string sent by the client
     char *query_string = getenv("QUERY_STRING");
     // Set the value of the CONTENT_LENGTH environment variable to the value of the Content-Length header sent by the client
     char *content_length_str = getenv("CONTENT_LENGTH");
     int content_length = atoi(content_length_str);
     char *content = malloc(content_length + 1);
+
     fread(content, content_length, 1, stdin);
     content[content_length] = '\0';
     
