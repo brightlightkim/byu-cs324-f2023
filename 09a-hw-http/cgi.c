@@ -20,7 +20,8 @@ int main(int argc, char *argv[]) {
     printf("Content-Type: text/plain\r\n");
     printf("Content-Length: %ld", strlen(response_body));
     printf("\r\n\r\n");
-    // Send the response body
+    // Send the response body answer: c0140d1975d6e6ba09cf21d9bf3e476d619b4128  -
+    // echo "username=user&password=pw" | QUERY_STRING="univ=byu&class=CS324&msg=hello%3Dworld%21" CONTENT_LENGTH=25  ./cgi | sha1sum
     printf("%s", response_body);
     return 0;
 }
