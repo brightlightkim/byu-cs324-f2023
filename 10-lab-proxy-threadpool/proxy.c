@@ -20,7 +20,7 @@
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:97.0) Gecko/20100101 Firefox/97.0";
 
 int complete_request_received(char *);
-int parse_request(char *, char *, char *, char *, char *, char *);
+int parse_request(char *, char *, char *, char *, char *);
 void test_parser();
 void print_bytes(unsigned char *, int);
 
@@ -36,12 +36,12 @@ int sbuf_remove(sbuf_t *sp);
 /* $begin sbuf_init */
 void sbuf_init(sbuf_t *sp, int n)
 {
-    sp->buf = calloc(n, sizeof(int)); 
-    sp->n = n;                       /* Buffer holds max of n items */
-    sp->front = sp->rear = 0;        /* Empty buffer iff front == rear */
-    sem_init(&sp->mutex, 0, 1);      /* Binary semaphore for locking */
-    sem_init(&sp->slots, 0, n);      /* Initially, buf has n empty slots */
-    sem_init(&sp->items, 0, 0);      /* Initially, buf has zero data items */
+	sp->buf = calloc(n, sizeof(int));
+	sp->n = n;					/* Buffer holds max of n items */
+	sp->front = sp->rear = 0;	/* Empty buffer iff front == rear */
+	sem_init(&sp->mutex, 0, 1); /* Binary semaphore for locking */
+	sem_init(&sp->slots, 0, n); /* Initially, buf has n empty slots */
+	sem_init(&sp->items, 0, 0); /* Initially, buf has zero data items */
 }
 /* $end sbuf_init */
 
@@ -49,7 +49,7 @@ void sbuf_init(sbuf_t *sp, int n)
 /* $begin sbuf_deinit */
 void sbuf_deinit(sbuf_t *sp)
 {
-    free(sp->buf);
+	free(sp->buf);
 }
 /* $end sbuf_deinit */
 
@@ -57,15 +57,19 @@ void sbuf_deinit(sbuf_t *sp)
 /* $begin sbuf_insert */
 void sbuf_insert(sbuf_t *sp, int item)
 {
-    printf("before sem_wait(&sp->slots);\n"); fflush(stdout);
-    sem_wait(&sp->slots);                          /* Wait for available slot */
-    printf("after sem_wait(&sp->slots);\n"); fflush(stdout);
-    sem_wait(&sp->mutex);                          /* Lock the buffer */
-    sp->buf[(++sp->rear)%(sp->n)] = item;   /* Insert the item */
-    sem_post(&sp->mutex);                          /* Unlock the buffer */
-    printf("before sem_post(&sp->items);\n"); fflush(stdout);
-    sem_post(&sp->items);                          /* Announce available item */
-    printf("after sem_post(&sp->items);\n"); fflush(stdout);
+	printf("before sem_wait(&sp->slots);\n");
+	fflush(stdout);
+	sem_wait(&sp->slots); /* Wait for available slot */
+	printf("after sem_wait(&sp->slots);\n");
+	fflush(stdout);
+	sem_wait(&sp->mutex);					/* Lock the buffer */
+	sp->buf[(++sp->rear) % (sp->n)] = item; /* Insert the item */
+	sem_post(&sp->mutex);					/* Unlock the buffer */
+	printf("before sem_post(&sp->items);\n");
+	fflush(stdout);
+	sem_post(&sp->items); /* Announce available item */
+	printf("after sem_post(&sp->items);\n");
+	fflush(stdout);
 }
 /* $end sbuf_insert */
 
@@ -73,18 +77,22 @@ void sbuf_insert(sbuf_t *sp, int item)
 /* $begin sbuf_remove */
 int sbuf_remove(sbuf_t *sp)
 {
-    int item;
-    
-    printf("before sem_wait(&sp->items);\n"); fflush(stdout);
-    sem_wait(&sp->items);                          /* Wait for available item */
-    printf("after sem_wait(&sp->items);\n"); fflush(stdout);
-    sem_wait(&sp->mutex);                          /* Lock the buffer */
-    item = sp->buf[(++sp->front)%(sp->n)];  /* Remove the item */
-    sem_post(&sp->mutex);                          /* Unlock the buffer */
-    printf("before sem_post(&sp->slots);\n"); fflush(stdout);
-    sem_post(&sp->slots);                          /* Announce available slot */
-    printf("after sem_post(&sp->slots);\n"); fflush(stdout);
-    return item;
+	int item;
+
+	printf("before sem_wait(&sp->items);\n");
+	fflush(stdout);
+	sem_wait(&sp->items); /* Wait for available item */
+	printf("after sem_wait(&sp->items);\n");
+	fflush(stdout);
+	sem_wait(&sp->mutex);					 /* Lock the buffer */
+	item = sp->buf[(++sp->front) % (sp->n)]; /* Remove the item */
+	sem_post(&sp->mutex);					 /* Unlock the buffer */
+	printf("before sem_post(&sp->slots);\n");
+	fflush(stdout);
+	sem_post(&sp->slots); /* Announce available slot */
+	printf("after sem_post(&sp->slots);\n");
+	fflush(stdout);
+	return item;
 }
 /* $end sbuf_remove */
 /* $end sbufc */
@@ -186,7 +194,7 @@ void handle_client(int sfd)
 	} while (complete_request_received(buf) == 0);
 
 	char method[16], hostname[NINTENDO], port[8], path[NINTENDO], headers[1024];
-	if (parse_request(buf, method, hostname, port, path, headers))
+	if (parse_request(buf, method, hostname, port, path))
 	{
 
 		char newRequest[MAX_OBJECT_SIZE];
@@ -284,7 +292,7 @@ int complete_request_received(char *request)
 	return strstr(request, "\r\n\r\n") == NULL ? 0 : 1;
 }
 
-int parse_request(char *request, char *method, char *hostname, char *port, char *path, char *headers)
+int parse_request(char *request, char *method, char *hostname, char *port, char *path)
 {
 
 	if (complete_request_received(request) == 0)
@@ -295,7 +303,6 @@ int parse_request(char *request, char *method, char *hostname, char *port, char 
 
 	bzero(port, 8);
 	bzero(path, NINTENDO);
-	bzero(headers, 1024);
 
 	char *indexPtr = request;
 	char *endPtr;
@@ -356,7 +363,7 @@ int parse_request(char *request, char *method, char *hostname, char *port, char 
 	endPtr = strstr(request, "\r\n\r\n");
 
 	length = endPtr - indexPtr;
-	memcpy(headers, indexPtr, length);
+	// memcpy(headers, indexPtr, length);
 
 	return 1;
 }
@@ -364,15 +371,15 @@ int parse_request(char *request, char *method, char *hostname, char *port, char 
 void test_parser()
 {
 	int i;
-	char method[16], hostname[64], port[8], path[64], headers[1024];
+	char method[16], hostname[64], port[8], path[64];
 
 	char *reqs[] = {
-		"GET http://www.example.com/indexPtr.html HTTP/1.0\r\n"
+		"GET http://www.example.com/index.html HTTP/1.0\r\n"
 		"Host: www.example.com\r\n"
 		"User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0\r\n"
 		"Accept-Language: en-US,en;q=0.5\r\n\r\n",
 
-		"GET http://www.example.com:8080/indexPtr.html?foo=1&bar=2 HTTP/1.0\r\n"
+		"GET http://www.example.com:8080/index.html?foo=1&bar=2 HTTP/1.0\r\n"
 		"Host: www.example.com:8080\r\n"
 		"User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0\r\n"
 		"Accept-Language: en-US,en;q=0.5\r\n\r\n",
@@ -382,24 +389,23 @@ void test_parser()
 		"User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0\r\n"
 		"Accept-Language: en-US,en;q=0.5\r\n\r\n",
 
-		"GET http://www.example.com:8080/indexPtr.html HTTP/1.0\r\n",
+		"GET http://www.example.com:8080/index.html HTTP/1.0\r\n",
 
 		NULL};
 
 	for (i = 0; reqs[i] != NULL; i++)
 	{
 		printf("Testing %s\n", reqs[i]);
-		if (parse_request(reqs[i], method, hostname, port, path, headers))
+		if (parse_request(reqs[i], method, hostname, port, path))
 		{
 			printf("METHOD: %s\n", method);
 			printf("HOSTNAME: %s\n", hostname);
 			printf("PORT: %s\n", port);
 			printf("PATH: %s\n", path);
-			printf("HEADERS: %s\n\n", headers);
 		}
 		else
 		{
-			printf("REQUEST INCOMPLETE\n\n");
+			printf("REQUEST INCOMPLETE\n");
 		}
 	}
 }
