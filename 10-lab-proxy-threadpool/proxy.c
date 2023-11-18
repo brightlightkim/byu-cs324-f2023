@@ -1,5 +1,5 @@
-#include <stdio.h>
 #include <sys/types.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -18,7 +18,7 @@
 
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:97.0) Gecko/20100101 Firefox/97.0";
 
-int complete_request_received(char *);
+int all_headers_received(char *);
 int parse_request(char *, char *, char *, char *, char *, char *);
 void test_parser();
 void print_bytes(unsigned char *, int);
@@ -122,7 +122,7 @@ void handle_client(int sfd)
 			break;
 		}
 		index += nread;
-	} while (complete_request_received(buf) == 0);
+	} while (all_headers_received(buf) == 0);
 
 	char method[16], hostname[NINTENDO], port[8], path[NINTENDO], headers[1024];
 	if (parse_request(buf, method, hostname, port, path, headers))
@@ -218,16 +218,15 @@ void handle_client(int sfd)
 	}
 }
 
-int complete_request_received(char *request)
+int all_headers_received(char *request)
 {
 	return strstr(request, "\r\n\r\n") == NULL ? 0 : 1;
 }
 
-int parse_request(char *request, char *method,
-				  char *hostname, char *port, char *path, char *headers)
+int parse_request(char *request, char *method, char *hostname, char *port, char *path, char *headers)
 {
 
-	if (complete_request_received(request) == 0)
+	if (all_headers_received(request) == 0)
 		return 0;
 
 	bzero(method, 16);
@@ -307,12 +306,12 @@ void test_parser()
 	char method[16], hostname[64], port[8], path[64], headers[1024];
 
 	char *reqs[] = {
-		"GET http://www.example.com/index.html HTTP/1.0\r\n"
+		"GET http://www.example.com/indexPtr.html HTTP/1.0\r\n"
 		"Host: www.example.com\r\n"
 		"User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0\r\n"
 		"Accept-Language: en-US,en;q=0.5\r\n\r\n",
 
-		"GET http://www.example.com:8080/index.html?foo=1&bar=2 HTTP/1.0\r\n"
+		"GET http://www.example.com:8080/indexPtr.html?foo=1&bar=2 HTTP/1.0\r\n"
 		"Host: www.example.com:8080\r\n"
 		"User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0\r\n"
 		"Accept-Language: en-US,en;q=0.5\r\n\r\n",
@@ -322,7 +321,7 @@ void test_parser()
 		"User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0\r\n"
 		"Accept-Language: en-US,en;q=0.5\r\n\r\n",
 
-		"GET http://www.example.com:8080/index.html HTTP/1.0\r\n",
+		"GET http://www.example.com:8080/indexPtr.html HTTP/1.0\r\n",
 
 		NULL};
 
@@ -335,10 +334,11 @@ void test_parser()
 			printf("HOSTNAME: %s\n", hostname);
 			printf("PORT: %s\n", port);
 			printf("PATH: %s\n", path);
+			printf("HEADERS: %s\n\n", headers);
 		}
 		else
 		{
-			printf("REQUEST INCOMPLETE\n");
+			printf("REQUEST INCOMPLETE\n\n");
 		}
 	}
 }
