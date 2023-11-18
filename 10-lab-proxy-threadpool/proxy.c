@@ -1,157 +1,83 @@
-#include <sys/types.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <semaphore.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/socket.h>
+#include <stdlib.h>
+#include <sys/types.h>
 #include <netdb.h>
-#include <errno.h>
 #include <pthread.h>
 #include "sbuf.h"
 
 /* Recommended max cache and object sizes */
-#define COUNT_OF_THREADS 8
-#define SIZE_OF_QUEUE 5
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
-#define NINTENDO 64
+#define NTHREADS  8
+#define SBUFSIZE  5
 
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:97.0) Gecko/20100101 Firefox/97.0";
 
-int complete_request_received(char *);
-int parse_request(char *, char *, char *, char *, char *);
+int all_headers_received(char *);
+int parse_request(char *, char *, char *, char *, char *, char *);
 void test_parser();
 void print_bytes(unsigned char *, int);
+int open_sfd();
+void handle_client();
+void *handle_request(void *vargp);
 
-/* NEW FUNCTIONS*/
-void handle_client(int sfd);
-void *thread();
-int open_sfd(int port);
-void sbuf_init(sbuf_t *sp, int n);
-void sbuf_deinit(sbuf_t *sp);
-void sbuf_insert(sbuf_t *sp, int item);
-int sbuf_remove(sbuf_t *sp);
-/* Create an empty, bounded, shared FIFO buffer with n slots */
-/* $begin sbuf_init */
-void sbuf_init(sbuf_t *sp, int n)
-{
-	sp->buf = calloc(n, sizeof(int));
-	sp->n = n;					/* Buffer holds max of n items */
-	sp->front = sp->rear = 0;	/* Empty buffer iff front == rear */
-	sem_init(&sp->mutex, 0, 1); /* Binary semaphore for locking */
-	sem_init(&sp->slots, 0, n); /* Initially, buf has n empty slots */
-	sem_init(&sp->items, 0, 0); /* Initially, buf has zero data items */
-}
-/* $end sbuf_init */
+sbuf_t sbuf; /* Shared buffer of connected descriptors */
 
-/* Clean up buffer sp */
-/* $begin sbuf_deinit */
-void sbuf_deinit(sbuf_t *sp)
-{
-	free(sp->buf);
-}
-/* $end sbuf_deinit */
-
-/* Insert item onto the rear of shared buffer sp */
-/* $begin sbuf_insert */
-void sbuf_insert(sbuf_t *sp, int item)
-{
-	printf("before sem_wait(&sp->slots);\n");
-	fflush(stdout);
-	sem_wait(&sp->slots); /* Wait for available slot */
-	printf("after sem_wait(&sp->slots);\n");
-	fflush(stdout);
-	sem_wait(&sp->mutex);					/* Lock the buffer */
-	sp->buf[(++sp->rear) % (sp->n)] = item; /* Insert the item */
-	sem_post(&sp->mutex);					/* Unlock the buffer */
-	printf("before sem_post(&sp->items);\n");
-	fflush(stdout);
-	sem_post(&sp->items); /* Announce available item */
-	printf("after sem_post(&sp->items);\n");
-	fflush(stdout);
-}
-/* $end sbuf_insert */
-
-/* Remove and return the first item from buffer sp */
-/* $begin sbuf_remove */
-int sbuf_remove(sbuf_t *sp)
-{
-	int item;
-
-	printf("before sem_wait(&sp->items);\n");
-	fflush(stdout);
-	sem_wait(&sp->items); /* Wait for available item */
-	printf("after sem_wait(&sp->items);\n");
-	fflush(stdout);
-	sem_wait(&sp->mutex);					 /* Lock the buffer */
-	item = sp->buf[(++sp->front) % (sp->n)]; /* Remove the item */
-	sem_post(&sp->mutex);					 /* Unlock the buffer */
-	printf("before sem_post(&sp->slots);\n");
-	fflush(stdout);
-	sem_post(&sp->slots); /* Announce available slot */
-	printf("after sem_post(&sp->slots);\n");
-	fflush(stdout);
-	return item;
-}
-/* $end sbuf_remove */
-/* $end sbufc */
-
-sbuf_t sbuf;
-
-int main(int argc, char *argv[])
-{
-	struct sockaddr_storage remote_addr;
-	socklen_t remote_addr_len = sizeof(remote_addr);
+int main(int argc, char *argv[]) {
+	struct sockaddr_storage peer_addr;
+	socklen_t peer_addr_len;
+	int sfd, connfd, i;
 	pthread_t tid;
 
-	sbuf_init(&sbuf, SIZE_OF_QUEUE);
-	for (int i = 0; i < COUNT_OF_THREADS; i++)
-	{
-		pthread_create(&tid, NULL, thread, NULL);
-	}
-
-	int sfd = open_sfd(atoi(argv[1]));
-	int newInteger;
-
-	while (1)
-	{
-
-		if ((newInteger = accept(sfd, (struct sockaddr *)&remote_addr, &remote_addr_len)) < 0)
-		{
-			printf("accept error: %d\n", errno);
-			fflush(stdout);
-			break;
-		}
-		sbuf_insert(&sbuf, newInteger);
+	// test_parser();
+	printf("%s\n", user_agent_hdr);
+	sfd = open_sfd(argv[1]);
+	sbuf_init(&sbuf, SBUFSIZE); 
+	for (i = 0; i < NTHREADS; i++)  /* Create worker threads */ 
+		pthread_create(&tid, NULL, handle_request, NULL);
+	while (1) {
+		peer_addr_len = sizeof(struct sockaddr_storage);
+		connfd = accept(sfd, (struct sockaddr *) &peer_addr, &peer_addr_len);
+		sbuf_insert(&sbuf, connfd); /* Insert connfd in buffer */
 	}
 
 	return 0;
 }
 
-void *thread()
-{
-	pthread_detach(pthread_self());
-
-	while (1)
-	{
-		handle_client(sbuf_remove(&sbuf));
+/* Thread routine */
+void *handle_request(void *vargp) {  
+	pthread_detach(pthread_self()); 
+	while (1) { 
+		int connfd = sbuf_remove(&sbuf); /* Remove connfd from buffer */ //line:conc:pre:removeconnfd
+		handle_client(connfd);                /* Service client */
+		close(connfd);
 	}
 }
 
-int open_sfd(int port)
-{
+int open_sfd(char *port) {
+	struct addrinfo hints;
+	int sfd, s;
+	struct addrinfo *result;
 
-	int sfd;
-	struct sockaddr_in ipv4addr;
-	memset(&ipv4addr, 0, sizeof(struct sockaddr_in));
+	memset(&hints, 0, sizeof(struct addrinfo));
 
-	ipv4addr.sin_family = AF_INET;
-	ipv4addr.sin_addr.s_addr = INADDR_ANY;
-	ipv4addr.sin_port = htons(port);
+	hints.ai_family = AF_INET;	/* Choose IPv4 or IPv6 */
+	hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
+	hints.ai_flags = AI_PASSIVE;	/* For wildcard IP address */
+	hints.ai_protocol = 0;		  /* Any protocol */
+	hints.ai_canonname = NULL;
+	hints.ai_addr = NULL;
+	hints.ai_next = NULL;
 
-	if ((sfd = socket(AF_INET, SOCK_STREAM, 0)) < -1)
-	{
+	if ((s = getaddrinfo(NULL, port, &hints, &result)) < 0) {
+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+		exit(EXIT_FAILURE);
+	}
+
+	if ((sfd = socket(result->ai_family, result->ai_socktype, 0)) < 0) {
 		perror("Error creating socket");
 		exit(EXIT_FAILURE);
 	}
@@ -159,219 +85,169 @@ int open_sfd(int port)
 	int optval = 1;
 	setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
 
-	if (bind(sfd, (struct sockaddr *)&ipv4addr, sizeof(struct sockaddr)) < 0)
-	{
+	if (bind(sfd, result->ai_addr, result->ai_addrlen) < 0) {
 		perror("Could not bind");
 		exit(EXIT_FAILURE);
 	}
 
-	listen(sfd, 100);
-	printf("Listening on port %d\n", ntohs(ipv4addr.sin_port));
-	fflush(stdout);
+	freeaddrinfo(result);   /* No longer needed */
+
+	if (listen(sfd, 100) < 0) { 
+		perror("Could not listen");
+		exit(EXIT_FAILURE);
+	}
 
 	return sfd;
 }
 
-void handle_client(int sfd)
-{
+void handle_client(int sfd) {
+	ssize_t nread, nwrite;
+	char buf[MAX_OBJECT_SIZE], req[MAX_OBJECT_SIZE];
+	char method[16], hostname[64], port[8], path[64], headers[1024], req_headers[1024];
+	int total = 0;
+	struct addrinfo hints;
+	struct addrinfo *result;
+	int sfd2, s;
+	memset(req, 0, MAX_OBJECT_SIZE);
+	memset(buf, 0, MAX_OBJECT_SIZE);
 
-	char buf[MAX_OBJECT_SIZE];
-	bzero(buf, MAX_OBJECT_SIZE);
-
-	int index = 0;
-	int nread;
-
-	do
-	{
-		nread = recv(sfd, &buf[index], 10, 0);
-		if (nread < 0)
-		{
-			printf("recv error: %d\n", errno);
-			fflush(stdout);
+	while (1) {
+		nread = recv(sfd, buf+total, sizeof(buf)-total, 0);
+		total += nread;
+		if (parse_request(buf, method, hostname, port, path, headers)) {
 			break;
 		}
-		index += nread;
-	} while (complete_request_received(buf) == 0);
-
-	char method[16], hostname[NINTENDO], port[8], path[NINTENDO];
-	if (parse_request(buf, method, hostname, port, path))
-	{
-
-		char newRequest[MAX_OBJECT_SIZE];
-		bzero(newRequest, MAX_OBJECT_SIZE);
-
-		strcat(newRequest, method);
-		strcat(newRequest, path);
-		strcat(newRequest, " HTTP/1.0\r\nHost: ");
-		strcat(newRequest, hostname);
-
-		if (strcmp(port, "80"))
-		{
-			strcat(newRequest, ":");
-			strcat(newRequest, port);
-		}
-
-		strcat(newRequest, "\r\nUser-Agent: ");
-		strcat(newRequest, user_agent_hdr);
-		strcat(newRequest, "\r\nConnection: close\r\nProxy-Connection: close\r\n\r\n");
-
-		struct addrinfo hints;
-		struct addrinfo *result, *rp;
-		int s, sfd2;
-		memset(&hints, 0, sizeof(struct addrinfo));
-		hints.ai_family = AF_INET;
-		hints.ai_socktype = SOCK_STREAM;
-
-		if ((s = getaddrinfo(hostname, port, &hints, &result)) != 0)
-		{
-			fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-			exit(EXIT_FAILURE);
-		}
-
-		for (rp = result; rp != NULL; rp = rp->ai_next)
-		{
-			sfd2 = socket(AF_INET, SOCK_STREAM, 0);
-			if (sfd2 == -1)
-				continue;
-			if (connect(sfd2, rp->ai_addr, rp->ai_addrlen) != -1)
-				break;
-			close(sfd2);
-		}
-
-		if (rp == NULL)
-		{ /* No address succeeded */
-			fprintf(stderr, "Could not connect\n");
-			exit(EXIT_FAILURE);
-		}
-
-		freeaddrinfo(result);
-
-		int offset = 0, bytesSent, bytesRead, totalBytesRead;
-		while (offset < strlen(newRequest))
-		{
-			bytesSent = write(sfd2, newRequest + offset, 1);
-			offset += bytesSent;
-		}
-
-		char response[MAX_OBJECT_SIZE];
-		bzero(response, MAX_OBJECT_SIZE);
-		totalBytesRead = 0;
-		while ((bytesRead = read(sfd2, response + totalBytesRead, MAX_OBJECT_SIZE)) != 0)
-		{
-			if (bytesRead == -1)
-			{
-				perror("read");
-				exit(EXIT_FAILURE);
-			}
-			totalBytesRead += bytesRead;
-		}
-		// for (int i=0; i<totalBytesRead; i++) {
-		// 	printf("%c", (char) response[i]);
-		// }
-		// printf("\n"); fflush(stdout);
-
-		close(sfd2);
-
-		offset = 0;
-		while (offset < totalBytesRead)
-		{
-			bytesSent = write(sfd, response + offset, 1);
-			offset += bytesSent;
-		}
-
-		close(sfd);
 	}
-	else
-	{
-		printf("REQUEST INCOMPLETE:\n%s\n\n", buf);
+
+	printf("Received %d bytes\n",
+			total);
+
+	printf("METHOD: %s\n", method);
+	printf("HOSTNAME: %s\n", hostname);
+	printf("PORT: %s\n", port);
+	printf("HEADERS: %s\n", headers);
+
+	strcat(req, method);
+	strcat(req, " ");
+	strcat(req, path);
+	strcat(req, " HTTP/1.0\r\n");
+	if (strcmp(port, "80") == 0) {
+		sprintf(req_headers, "Host: %s\r\n%s\r\n", 
+		hostname, user_agent_hdr);
+	} else {
+		sprintf(req_headers, "Host: %s:%s\r\n%s\r\n", 
+		hostname, port,user_agent_hdr);
 	}
+	strcat(req_headers, "Connection: close\r\n");
+	strcat(req_headers, "Proxy-Connection: close\r\n\r\n");
+	strcat(req, req_headers);
+	printf("%s\n", req);
+
+	// communicate with the HTTP server
+	hints.ai_family = AF_INET;	/* Choose IPv4 or IPv6 */
+	hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
+	hints.ai_flags = AI_PASSIVE;	/* For wildcard IP address */
+	hints.ai_protocol = 0;		  /* Any protocol */
+	hints.ai_canonname = NULL;
+	hints.ai_addr = NULL;
+	hints.ai_next = NULL;
+
+	if ((s = getaddrinfo(hostname, port, &hints, &result)) < 0) {
+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+		exit(EXIT_FAILURE);
+	}
+
+	if ((sfd2 = socket(result->ai_family, result->ai_socktype, 0)) < 0) {
+		perror("Error creating socket");
+		exit(EXIT_FAILURE);
+	}
+
+	if (connect(sfd2, result->ai_addr, result->ai_addrlen) < 0) {
+		fprintf(stderr, "Could not connect\n");
+		exit(EXIT_FAILURE);
+	}			
+
+	freeaddrinfo(result);   /* No longer needed */
+
+
+	if ((nwrite = send(sfd2, req, strlen(req), 0)) != strlen(req)) {
+		fprintf(stderr, "Error sending response\n");
+	};
+	printf("num bytes sent to server: %ld\n", nwrite);
+
+	total = 0;
+	memset(buf, 0, MAX_OBJECT_SIZE);
+	while((nread = recv(sfd2, buf+total, sizeof(buf)-total, 0))){
+		total += nread;
+	}
+	printf("bytes received from the server:\n %s\n", buf);
+	printf("num bytes recieved from server: %d\n", total);
+
+	close(sfd2);
+
+	if ((nwrite = send(sfd, buf, total, 0)) != total) {
+		fprintf(stderr, "Error sending response\n");
+	}
+	printf("num bytes sent to client: %ld\n", nwrite);
+
+	close(sfd);
 }
 
-int complete_request_received(char *request)
-{
-	return strstr(request, "\r\n\r\n") == NULL ? 0 : 1;
+int all_headers_received(char *request) {
+	if (strstr(request, "\r\n\r\n") != NULL) {
+		return 1;
+	}
+	return 0;
 }
 
-int parse_request(char *request, char *method, char *hostname, char *port, char *path)
-{
-
-	if (complete_request_received(request) == 0)
+int parse_request(char *request, char *method, char *hostname, char *port, char *path, char *headers) {
+	if (!all_headers_received(request)) {
 		return 0;
-
-	bzero(method, 16);
-	bzero(hostname, NINTENDO);
-
-	bzero(port, 8);
-	bzero(path, NINTENDO);
-
-	char *indexPtr = request;
-	char *endPtr;
-	int length;
-
-	endPtr = strstr(request, " ");
-	length = endPtr - request;
-	memcpy(method, request, length + 1);
-
-	char URL[136];
-	memset(URL, 0, 136);
-	indexPtr = strstr(endPtr, "/") + 2;
-	endPtr = strstr(endPtr + 1, " ");
-	length = endPtr - indexPtr;
-	memcpy(URL, indexPtr, length);
-
-	if ((endPtr = strstr(URL, ":")) != NULL)
-	{
-		length = endPtr - URL;
-		memcpy(hostname, URL, length);
-	}
-	else
-	{
-
-		if ((endPtr = strstr(URL, "/")) != NULL)
-		{
-			length = endPtr - URL;
-			memcpy(hostname, URL, length);
-		}
-		else
-		{
-			printf("Error parsing hostname.\n");
-			fflush(stdout);
-		}
 	}
 
-	indexPtr = strstr(URL, ":");
-	if (indexPtr == NULL)
-	{
-		char *defaultPort = "80";
-		memcpy(port, defaultPort, 2);
+	char req_str[MAX_OBJECT_SIZE];
+	strcpy(req_str, request);
+	char *url;
+	char ptr[129];
+	char *ptr2;
+	char pathPtr[129];
+
+	strcpy(headers, strstr(req_str, "\r\n")+2); 
+
+	// get method
+	strcpy(method, strtok(req_str, " "));
+
+	// get and parse URL
+	url = strtok(NULL, " ");
+
+	strcpy(ptr, strstr(url, "//") + 2);
+
+	if ((ptr2 = strstr(ptr, ":")) != NULL) { // custom port
+
+		strcpy(pathPtr, strstr(ptr, "/"));
+		strcpy(hostname, strtok(ptr, ":"));
+
+		strcpy(port, strtok(ptr2+1, "/"));
+
+		strcpy(path, strtok(pathPtr, " "));
+
+	} else { // default port
+
+		strcpy(pathPtr, strstr(ptr, "/"));
+		strcpy(hostname, strtok(ptr, "/"));
+
+		strcpy(port, "80");
+
+		strcpy(path, strtok(pathPtr, " "));
+
 	}
-	else
-	{
-		indexPtr++;
-		endPtr = strstr(indexPtr, "/");
-		length = endPtr - indexPtr;
-		memcpy(port, indexPtr, length);
-	}
-
-	indexPtr = strstr(URL, "/");
-	endPtr = &URL[strlen(URL)];
-
-	length = endPtr - indexPtr;
-	memcpy(path, indexPtr, length);
-
-	indexPtr = strstr(request, "\r\n") + 2;
-	endPtr = strstr(request, "\r\n\r\n");
-
-	length = endPtr - indexPtr;
-	// memcpy(headers, indexPtr, length);
 
 	return 1;
 }
 
-void test_parser()
-{
+void test_parser() {
 	int i;
-	char method[16], hostname[64], port[8], path[64];
+	char method[16], hostname[64], port[8], path[64], headers[1024];
 
 	char *reqs[] = {
 		"GET http://www.example.com/index.html HTTP/1.0\r\n"
@@ -391,82 +267,56 @@ void test_parser()
 
 		"GET http://www.example.com:8080/index.html HTTP/1.0\r\n",
 
-		NULL};
-
-	for (i = 0; reqs[i] != NULL; i++)
-	{
+		NULL
+	};
+	
+	for (i = 0; reqs[i] != NULL; i++) {
 		printf("Testing %s\n", reqs[i]);
-		if (parse_request(reqs[i], method, hostname, port, path))
-		{
+		if (parse_request(reqs[i], method, hostname, port, path, headers)) {
 			printf("METHOD: %s\n", method);
 			printf("HOSTNAME: %s\n", hostname);
 			printf("PORT: %s\n", port);
-			printf("PATH: %s\n", path);
-		}
-		else
-		{
+			printf("HEADERS: %s\n", headers);
+		} else {
 			printf("REQUEST INCOMPLETE\n");
 		}
 	}
 }
 
-void print_bytes(unsigned char *bytes, int byteslen)
-{
+void print_bytes(unsigned char *bytes, int byteslen) {
 	int i, j, byteslen_adjusted;
 
-	if (byteslen % 8)
-	{
+	if (byteslen % 8) {
 		byteslen_adjusted = ((byteslen / 8) + 1) * 8;
-	}
-	else
-	{
+	} else {
 		byteslen_adjusted = byteslen;
 	}
-	for (i = 0; i < byteslen_adjusted + 1; i++)
-	{
-		if (!(i % 8))
-		{
-			if (i > 0)
-			{
-				for (j = i - 8; j < i; j++)
-				{
-					if (j >= byteslen_adjusted)
-					{
+	for (i = 0; i < byteslen_adjusted + 1; i++) {
+		if (!(i % 8)) {
+			if (i > 0) {
+				for (j = i - 8; j < i; j++) {
+					if (j >= byteslen_adjusted) {
 						printf("  ");
-					}
-					else if (j >= byteslen)
-					{
+					} else if (j >= byteslen) {
 						printf("  ");
-					}
-					else if (bytes[j] >= '!' && bytes[j] <= '~')
-					{
+					} else if (bytes[j] >= '!' && bytes[j] <= '~') {
 						printf(" %c", bytes[j]);
-					}
-					else
-					{
+					} else {
 						printf(" .");
 					}
 				}
 			}
-			if (i < byteslen_adjusted)
-			{
+			if (i < byteslen_adjusted) {
 				printf("\n%02X: ", i);
 			}
-		}
-		else if (!(i % 4))
-		{
+		} else if (!(i % 4)) {
 			printf(" ");
 		}
-		if (i >= byteslen_adjusted)
-		{
+		if (i >= byteslen_adjusted) {
 			continue;
-		}
-		else if (i >= byteslen)
-		{
+		} else if (i >= byteslen) {
 			printf("   ");
-		}
-		else
-		{
+		} else {
 			printf("%02X ", bytes[i]);
 		}
 	}
