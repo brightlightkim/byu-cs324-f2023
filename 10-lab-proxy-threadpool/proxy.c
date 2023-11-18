@@ -193,7 +193,7 @@ void handle_client(int sfd)
 		index += nread;
 	} while (complete_request_received(buf) == 0);
 
-	char method[16], hostname[NINTENDO], port[8], path[NINTENDO], headers[1024];
+	char method[16], hostname[NINTENDO], port[8], path[NINTENDO];
 	if (parse_request(buf, method, hostname, port, path))
 	{
 
