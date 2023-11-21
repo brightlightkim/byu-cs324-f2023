@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
 {
     struct sockaddr_storage peer_addr;
     socklen_t peer_addr_len;
-    int sfd, connfd;
+    int sfd;
 
     printf("%s\n", user_agent_hdr);
     sfd = open_sfd(argv[1]);
