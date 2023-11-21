@@ -79,7 +79,7 @@ int parse_request(char *request, char *method,
     // Continue this pattern to get the URL, and then extract the components of the
     // URL the same way.
 
-    return 0;
+    return 1;
 }
 
 void test_parser()
