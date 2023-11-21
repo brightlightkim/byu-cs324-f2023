@@ -58,23 +58,56 @@ int complete_request_received(char *request)
 int parse_request(char *request, char *method,
                   char *hostname, char *port, char *path)
 {
-     char *beginning_of_thing = request;
+    //  char *beginning_of_thing = request;
     
-    char *end_of_thing = strstr(beginning_of_thing, " ");
+    // char *end_of_thing = strstr(beginning_of_thing, " ");
     
-    strncpy(method, beginning_of_thing, end_of_thing - beginning_of_thing);
+    // strncpy(method, beginning_of_thing, end_of_thing - beginning_of_thing);
     
-    beginning_of_thing = end_of_thing + 1;
+    // beginning_of_thing = end_of_thing + 1;
     
-    end_of_thing = strstr(beginning_of_thing, " ");
+    // end_of_thing = strstr(beginning_of_thing, " ");
 
-    strncpy(path, beginning_of_thing, end_of_thing - beginning_of_thing);
+    // strncpy(path, beginning_of_thing, end_of_thing - beginning_of_thing);
 
-    beginning_of_thing = end_of_thing + 1;
+    // beginning_of_thing = end_of_thing + 1;
 
-    end_of_thing = strstr(beginning_of_thing, "Host: ");
+    // end_of_thing = strstr(beginning_of_thing, "\r\n");
 
-    strncpy(hostname, beginning_of_thing, end_of_thing - beginning_of_thing);
+    // strncpy(hostname, beginning_of_thing, end_of_thing - beginning_of_thing);
+    
+    char req_str[MAX_OBJECT_SIZE];
+    char *url;
+    char ptr[129];
+	char *ptr2;
+	char pathPtr[129];
+	// get method
+	strcpy(method, strtok(req_str, " "));
+
+	// get and parse URL
+	url = strtok(NULL, " ");
+
+	strcpy(ptr, strstr(url, "//") + 2);
+
+	if ((ptr2 = strstr(ptr, ":")) != NULL) { // custom port
+
+		strcpy(pathPtr, strstr(ptr, "/"));
+		strcpy(hostname, strtok(ptr, ":"));
+
+		strcpy(port, strtok(ptr2+1, "/"));
+
+		strcpy(path, strtok(pathPtr, " "));
+
+	} else { // default port
+
+		strcpy(pathPtr, strstr(ptr, "/"));
+		strcpy(hostname, strtok(ptr, "/"));
+
+		strcpy(port, "80");
+
+		strcpy(path, strtok(pathPtr, " "));
+
+	}
 
 
     // end_of_thing = strstr(beginning_of_thing, "\r\n");
