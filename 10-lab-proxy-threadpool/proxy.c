@@ -20,35 +20,27 @@ void print_bytes(unsigned char *, int);
 int main(int argc, char *argv[])
 {
     // test_parser();
-    // struct addrinfo *p, *listp, hints;
-    // char buf[MAXLINE], method[16], hostname[64], port[8], path[64];
+    int i;
+    char method[16], hostname[64], port[8], path[64];
 
-    // if (argc != 2)
-    // {
-    //     fprintf(stderr, "usage: %s <domain name>\n", argv[0]);
-    //     exit(0);
-    // }
+    char *reqs[] = {
+        "GET http://www.example.com/index.html HTTP/1.0\r\n"
+        "Host: www.example.com\r\n"
+        "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0\r\n"
+        "Accept-Language: en-US,en;q=0.5\r\n\r\n",
+    };
 
-    // memset(&hints, 0, sizeof(struct addrinfo));
-    // hints.ai_socktype = SOCK_STREAM;
-    // hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
-    // hints.ai_flags = AI_NUMERICSERV;
-
-    // if (getaddrinfo(argv[1], NULL, &hints, &listp) != 0)
-    // {
-    //     fprintf(stderr, "getaddrinfo error\n");
-    //     exit(0);
-    // }
-
-    // for (p = listp; p != NULL; p = p->ai_next)
-    // {
-    //     if (getnameinfo(p->ai_addr, p->ai_addrlen, buf, MAXLINE, NULL, 0, NI_NUMERICHOST) == 0)
-    //     {
-    //         printf("%s\n", buf);
-    //     }
-    // }
-
-    // freeaddrinfo(listp);
+    if (parse_request(reqs[i], method, hostname, port, path))
+    {
+        printf("METHOD: %s\n", method);
+        printf("HOSTNAME: %s\n", hostname);
+        printf("PORT: %s\n", port);
+        printf("PATH: %s\n", path);
+    }
+    else
+    {
+        printf("REQUEST INCOMPLETE\n");
+    }
 
     printf("%s\n", user_agent_hdr);
     return 0;
@@ -66,6 +58,27 @@ int complete_request_received(char *request)
 int parse_request(char *request, char *method,
                   char *hostname, char *port, char *path)
 {
+    char method[16];
+    // The first thing to extract is the method, which is at the beginning of the
+    // request, so we point beginning_of_thing to the start of req.
+    char *beginning_of_thing = request;
+    // Remember that strstr() relies on its first argument being a string--that
+    // is, that it is null-terminated.
+    char *end_of_thing = strstr(beginning_of_thing, " ");
+    // At this point, end_of_thing is either NULL if no space is found or it points
+    // to the space.  Because your code will only have to deal with well-formed
+    // HTTP requests for this lab, you won't need to worry about end_of_thing being
+    // NULL.  But later uses of strstr() might require a conditional, such as when
+    // searching for a colon to determine whether or not a port was specified.
+    //
+    // Copy the first n (end_of_thing - beginning_of_thing) bytes of
+    // req/beginning_of_things to method.
+    strncpy(method, beginning_of_thing, end_of_thing - beginning_of_thing);
+    // Move beyond the first space, so beginning_of_thing now points to the start
+    // of the URL.
+    beginning_of_thing = end_of_thing + 1;
+    // Continue this pattern to get the URL, and then extract the components of the
+    // URL the same way.
 
     return 0;
 }
