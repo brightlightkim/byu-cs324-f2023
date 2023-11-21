@@ -88,102 +88,94 @@ int open_sfd(char *port)
 void handle_client(int sfd)
 {
     ssize_t nread, nwrite;
-    char buf[MAX_OBJECT_SIZE], req[MAX_OBJECT_SIZE];
-    char method[16], hostname[64], port[8], path[64], req_headers[1024];
-    int total = 0;
-    struct addrinfo hints;
-    struct addrinfo *result;
-    int sfd2, s;
-    memset(req, 0, MAX_OBJECT_SIZE);
-    memset(buf, 0, MAX_OBJECT_SIZE);
+	char buf[MAX_OBJECT_SIZE], req[MAX_OBJECT_SIZE];
+	char method[16], hostname[64], port[8], path[64], req_headers[1024];
+	int total = 0;
+	struct addrinfo hints;
+	struct addrinfo *result;
+	int sfd2, s;
+	memset(req, 0, MAX_OBJECT_SIZE);
+	memset(buf, 0, MAX_OBJECT_SIZE);
 
-    while (1)
-    {
-        nread = recv(sfd2, buf + total, sizeof(buf) - total, 0);
-        total += nread;
-        if (parse_request(buf, method, hostname, port, path))
-        {
-            break;
-        }
-    }
+	while (1) {
+		nread = recv(sfd, buf+total, sizeof(buf)-total, 0);
+		total += nread;
+		if (parse_request(buf, method, hostname, port, path)) {
+			break;
+		}
+	}
 
-    printf("METHOD: %s\n", method);
-    printf("HOSTNAME: %s\n", hostname);
-    printf("PORT: %s\n", port);
-    printf("PATH: %s\n", path);
+	printf("Received %d bytes\n",
+			total);
 
-    strcat(req, method);
-    strcat(req, " ");
-    strcat(req, path);
-    strcat(req, " HTTP/1.0\r\n");
-    if (strcmp(port, "80") == 0)
-    {
-        sprintf(req_headers, "Host: %s\r\n%s\r\n",
-                hostname, user_agent_hdr);
-    }
-    else
-    {
-        sprintf(req_headers, "Host: %s:%s\r\n%s\r\n",
-                hostname, port, user_agent_hdr);
-    }
-    strcat(req_headers, "Connection: close\r\n");
-    strcat(req_headers, "Proxy-Connection: close\r\n\r\n");
-    strcat(req, req_headers);
-    printf("%s\n", req);
+	printf("METHOD: %s\n", method);
+	printf("HOSTNAME: %s\n", hostname);
+	printf("PORT: %s\n", port);
 
-    // communicate with the HTTP server
-    hints.ai_family = AF_INET;       /* Choose IPv4 or IPv6 */
-    hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
-    hints.ai_flags = AI_PASSIVE;     /* For wildcard IP address */
-    hints.ai_protocol = 0;           /* Any protocol */
-    hints.ai_canonname = NULL;
-    hints.ai_addr = NULL;
-    hints.ai_next = NULL;
+	strcat(req, method);
+	strcat(req, " ");
+	strcat(req, path);
+	strcat(req, " HTTP/1.0\r\n");
+	if (strcmp(port, "80") == 0) {
+		sprintf(req_headers, "Host: %s\r\n%s\r\n", 
+		hostname, user_agent_hdr);
+	} else {
+		sprintf(req_headers, "Host: %s:%s\r\n%s\r\n", 
+		hostname, port,user_agent_hdr);
+	}
+	strcat(req_headers, "Connection: close\r\n");
+	strcat(req_headers, "Proxy-Connection: close\r\n\r\n");
+	strcat(req, req_headers);
+	printf("%s\n", req);
 
-    if ((s = getaddrinfo(hostname, port, &hints, &result)) < 0)
-    {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-        exit(EXIT_FAILURE);
-    }
+	// communicate with the HTTP server
+	hints.ai_family = AF_INET;	/* Choose IPv4 or IPv6 */
+	hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
+	hints.ai_flags = AI_PASSIVE;	/* For wildcard IP address */
+	hints.ai_protocol = 0;		  /* Any protocol */
+	hints.ai_canonname = NULL;
+	hints.ai_addr = NULL;
+	hints.ai_next = NULL;
 
-    if ((sfd2 = socket(result->ai_family, result->ai_socktype, 0)) < 0)
-    {
-        perror("Error creating socket");
-        exit(EXIT_FAILURE);
-    }
+	if ((s = getaddrinfo(hostname, port, &hints, &result)) < 0) {
+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+		exit(EXIT_FAILURE);
+	}
 
-    if (connect(sfd2, result->ai_addr, result->ai_addrlen) < 0)
-    {
-        fprintf(stderr, "Could not connect\n");
-        exit(EXIT_FAILURE);
-    }
+	if ((sfd2 = socket(result->ai_family, result->ai_socktype, 0)) < 0) {
+		perror("Error creating socket");
+		exit(EXIT_FAILURE);
+	}
 
-    freeaddrinfo(result); /* No longer needed */
+	if (connect(sfd2, result->ai_addr, result->ai_addrlen) < 0) {
+		fprintf(stderr, "Could not connect\n");
+		exit(EXIT_FAILURE);
+	}			
 
-    if ((nwrite = send(sfd2, req, strlen(req), 0)) != strlen(req))
-    {
-        fprintf(stderr, "Error sending response\n");
-    };
-    printf("num bytes sent to server: %ld\n", nwrite);
+	freeaddrinfo(result);   /* No longer needed */
 
-    total = 0;
-    memset(buf, 0, MAX_OBJECT_SIZE);
-    while ((nread = recv(sfd2, buf + total, sizeof(buf) - total, 0)))
-    {
-        total += nread;
-    }
-    printf("bytes received from the server:\n %s\n", buf);
-    printf("num bytes recieved from server: %d\n", total);
 
-    close(sfd2);
+	if ((nwrite = send(sfd2, req, strlen(req), 0)) != strlen(req)) {
+		fprintf(stderr, "Error sending response\n");
+	};
+	printf("num bytes sent to server: %ld\n", nwrite);
 
-    if ((nwrite = send(sfd2, buf, total, 0)) != total)
-    {
-        fprintf(stderr, "Error sending response\n");
-    }
-    printf("num bytes sent to client: %ld\n", nwrite);
+	total = 0;
+	memset(buf, 0, MAX_OBJECT_SIZE);
+	while((nread = recv(sfd2, buf+total, sizeof(buf)-total, 0))){
+		total += nread;
+	}
+	printf("bytes received from the server:\n %s\n", buf);
+	printf("num bytes recieved from server: %d\n", total);
 
-    close(sfd2);
+	close(sfd2);
+
+	if ((nwrite = send(sfd, buf, total, 0)) != total) {
+		fprintf(stderr, "Error sending response\n");
+	}
+	printf("num bytes sent to client: %ld\n", nwrite);
+
+	close(sfd);
 }
 
 int complete_request_received(char *request)
