@@ -50,7 +50,7 @@ int main(int argc, char *argv[])
 
     // freeaddrinfo(listp);
 
-    // printf("%s\n", user_agent_hdr);
+    printf("%s\n", user_agent_hdr);
     return 0;
 }
 
