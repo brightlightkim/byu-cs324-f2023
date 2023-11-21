@@ -37,10 +37,10 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-int open_sfd()
+int open_sfd(char *port)
 {
     struct addrinfo hints;
-    int sfd;
+    int sfd, s;
     struct addrinfo *result;
 
     memset(&hints, 0, sizeof(struct addrinfo));
@@ -53,11 +53,11 @@ int open_sfd()
     hints.ai_addr = NULL;
     hints.ai_next = NULL;
 
-    if ((result = getaddrinfo(NULL, "8080", &hints, &result)) < 0)
-    {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
-        exit(EXIT_FAILURE);
-    }
+    
+	if ((s = getaddrinfo(NULL, port, &hints, &result)) < 0) {
+		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+		exit(EXIT_FAILURE);
+	}
 
     if ((sfd = socket(result->ai_family, result->ai_socktype, 0)) < 0)
     {
