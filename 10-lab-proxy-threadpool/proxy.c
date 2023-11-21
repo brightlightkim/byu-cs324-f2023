@@ -40,7 +40,8 @@ int main(int argc, char *argv[])
 int open_sfd(char *port)
 {
     struct addrinfo hints;
-    int sfd, s;
+    int sfd;
+    // int sfd, s;
     struct addrinfo *result;
 
     memset(&hints, 0, sizeof(struct addrinfo));
@@ -54,10 +55,10 @@ int open_sfd(char *port)
     hints.ai_next = NULL;
 
     
-	if ((s = getaddrinfo(NULL, port, &hints, &result)) < 0) {
-		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-		exit(EXIT_FAILURE);
-	}
+	// if ((s = getaddrinfo(NULL, port, &hints, &result)) < 0) {
+	// 	fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+	// 	exit(EXIT_FAILURE);
+	// }
 
     if ((sfd = socket(result->ai_family, result->ai_socktype, 0)) < 0)
     {
