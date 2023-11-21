@@ -76,7 +76,12 @@ int parse_request(char *request, char *method,
 
     // strncpy(hostname, beginning_of_thing, end_of_thing - beginning_of_thing);
     
-    char req_str[MAX_OBJECT_SIZE];
+    if (!complete_request_received(request)) {
+		return 0;
+	}
+
+	char req_str[MAX_OBJECT_SIZE];
+	strcpy(req_str, request);
     char *url;
     char ptr[129];
 	char *ptr2;
