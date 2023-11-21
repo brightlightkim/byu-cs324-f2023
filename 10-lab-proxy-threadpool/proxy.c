@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
     {
         peer_addr_len = sizeof(struct sockaddr_storage);
         connfd = accept(sfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
-        handle_client(connfd);
+        handle_client(sfd);
     }
 
     return 0;
@@ -85,14 +85,8 @@ int open_sfd(char *port)
     return sfd;
 }
 
-void handle_client(int connfd)
+void handle_client(int sfd)
 {
-    // Given a newly created file descriptor, returned from accept(), handle a client HTTP request. For now, just have this method do the following:
-    // Read from the socket into a buffer until the entire HTTP request has been received. Again, there is no request body in this lab, so this is basically just the end of headers.
-    // Print out the HTTP request using print_bytes(). This will allow you to see the entire request.
-    // Add a null-terminator to the HTTP request, and pass it to the parse_request() function, allowing it to extract the individual values associated with the request.
-    // Print out the components of the HTTP request, once you have received it in its entirety (e.g., like test_parser() does). This includes the method, hostname, port, and path. Because these should all be null-terminated strings of type char [], you can use printf().
-    // Close the socket. Later will you replace printing the values with more meaningful functionality. This first part is just to get you going in the right direction.
     ssize_t nread, nwrite;
     char buf[MAX_OBJECT_SIZE], req[MAX_OBJECT_SIZE];
     char method[16], hostname[64], port[8], path[64], req_headers[1024];
@@ -102,8 +96,6 @@ void handle_client(int connfd)
     int sfd2, s;
     memset(req, 0, MAX_OBJECT_SIZE);
     memset(buf, 0, MAX_OBJECT_SIZE);
-
-    sfd2 = connfd;
 
     while (1)
     {
