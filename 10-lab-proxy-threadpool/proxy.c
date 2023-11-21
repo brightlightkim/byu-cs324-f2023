@@ -19,28 +19,28 @@ void print_bytes(unsigned char *, int);
 
 int main(int argc, char *argv[])
 {
-    // test_parser();
+    test_parser();
     // int i;
-    char method[16], hostname[64], port[8], path[64];
+    // char method[16], hostname[64], port[8], path[64];
 
-    char *reqs[] = {
-        "GET http://www.example.com/index.html HTTP/1.0\r\n"
-        "Host: www.example.com\r\n"
-        "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0\r\n"
-        "Accept-Language: en-US,en;q=0.5\r\n\r\n",
-    };
+    // char *reqs[] = {
+    //     "GET http://www.example.com/index.html HTTP/1.0\r\n"
+    //     "Host: www.example.com\r\n"
+    //     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0\r\n"
+    //     "Accept-Language: en-US,en;q=0.5\r\n\r\n",
+    // };
 
-    if (parse_request(reqs[0], method, hostname, port, path))
-    {
-        printf("METHOD: %s\n", method);
-        printf("HOSTNAME: %s\n", hostname);
-        printf("PORT: %s\n", port);
-        printf("PATH: %s\n", path);
-    }
-    else
-    {
-        printf("REQUEST INCOMPLETE\n");
-    }
+    // if (parse_request(reqs[0], method, hostname, port, path))
+    // {
+    //     printf("METHOD: %s\n", method);
+    //     printf("HOSTNAME: %s\n", hostname);
+    //     printf("PORT: %s\n", port);
+    //     printf("PATH: %s\n", path);
+    // }
+    // else
+    // {
+    //     printf("REQUEST INCOMPLETE\n");
+    // }
 
     printf("%s\n", user_agent_hdr);
     return 0;
@@ -58,24 +58,6 @@ int complete_request_received(char *request)
 int parse_request(char *request, char *method,
                   char *hostname, char *port, char *path)
 {
-    //  char *beginning_of_thing = request;
-    
-    // char *end_of_thing = strstr(beginning_of_thing, " ");
-    
-    // strncpy(method, beginning_of_thing, end_of_thing - beginning_of_thing);
-    
-    // beginning_of_thing = end_of_thing + 1;
-    
-    // end_of_thing = strstr(beginning_of_thing, " ");
-
-    // strncpy(path, beginning_of_thing, end_of_thing - beginning_of_thing);
-
-    // beginning_of_thing = end_of_thing + 1;
-
-    // end_of_thing = strstr(beginning_of_thing, "\r\n");
-
-    // strncpy(hostname, beginning_of_thing, end_of_thing - beginning_of_thing);
-    
     if (!complete_request_received(request)) {
 		return 0;
 	}
@@ -113,11 +95,6 @@ int parse_request(char *request, char *method,
 		strcpy(path, strtok(pathPtr, " "));
 
 	}
-
-
-    // end_of_thing = strstr(beginning_of_thing, "\r\n");
-
-    // strncpy(port, beginning_of_thing, end_of_thing - beginning_of_thing);
 
     return 1;
 }
