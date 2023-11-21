@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <csapp.h>
+
 /* Recommended max object size */
 #define MAX_OBJECT_SIZE 102400
 
@@ -59,7 +59,7 @@ int complete_request_received(char *request)
 int parse_request(char *request, char *method,
                   char *hostname, char *port, char *path)
 {
-    
+
     return 0;
 }
 
