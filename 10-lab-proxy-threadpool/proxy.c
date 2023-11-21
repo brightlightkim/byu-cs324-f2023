@@ -16,7 +16,7 @@ int complete_request_received(char *);
 int parse_request(char *, char *, char *, char *, char *);
 void test_parser();
 void print_bytes(unsigned char *, int);
-int open_sfd();
+int open_sfd(char *);
 void handle_client(int);
 
 int main(int argc, char *argv[])
@@ -96,12 +96,8 @@ void handle_client(int sfd)
 		}
 	}
     print_bytes((unsigned char *)buf, total);
-    printf("Received %d bytes\n",
-			total);
 
-	printf("METHOD: %s\n", method);
-	printf("HOSTNAME: %s\n", hostname);
-	printf("PORT: %s\n", port);
+    
     // ssize_t nread, nwrite;
 	// char buf[MAX_OBJECT_SIZE], req[MAX_OBJECT_SIZE];
 	// char method[16], hostname[64], port[8], path[64], req_headers[1024];
