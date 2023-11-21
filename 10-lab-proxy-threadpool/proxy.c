@@ -72,15 +72,15 @@ int parse_request(char *request, char *method,
 
     beginning_of_thing = end_of_thing + 1;
 
-    end_of_thing = strstr(beginning_of_thing, "\r\n");
+    // end_of_thing = strstr(beginning_of_thing, "\r\n");
 
-    strncpy(path, beginning_of_thing, end_of_thing - beginning_of_thing);
+    // strncpy(path, beginning_of_thing, end_of_thing - beginning_of_thing);
 
-    beginning_of_thing = end_of_thing + 1;
+    // beginning_of_thing = end_of_thing + 1;
 
-    end_of_thing = strstr(beginning_of_thing, "\r\n");
+    // end_of_thing = strstr(beginning_of_thing, "\r\n");
 
-    strncpy(port, beginning_of_thing, end_of_thing - beginning_of_thing);
+    // strncpy(port, beginning_of_thing, end_of_thing - beginning_of_thing);
 
     return 1;
 }
