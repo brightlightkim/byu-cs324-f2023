@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
         "Accept-Language: en-US,en;q=0.5\r\n\r\n",
     };
 
-    if (parse_request(reqs[i], method, hostname, port, path))
+    if (parse_request(reqs[0], method, hostname, port, path))
     {
         printf("METHOD: %s\n", method);
         printf("HOSTNAME: %s\n", hostname);
