@@ -105,6 +105,8 @@ void handle_client(int sfd)
 		}
 	}
 
+    print_bytes(nread, sizeof(nread));
+
 	printf("Received %d bytes\n",
 			total);
 
