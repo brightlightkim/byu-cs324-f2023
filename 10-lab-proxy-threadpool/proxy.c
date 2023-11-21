@@ -58,26 +58,29 @@ int complete_request_received(char *request)
 int parse_request(char *request, char *method,
                   char *hostname, char *port, char *path)
 {
-    // The first thing to extract is the method, which is at the beginning of the
-    // request, so we point beginning_of_thing to the start of req.
-    char *beginning_of_thing = request;
-    // Remember that strstr() relies on its first argument being a string--that
-    // is, that it is null-terminated.
+     char *beginning_of_thing = request;
+    
     char *end_of_thing = strstr(beginning_of_thing, " ");
-    // At this point, end_of_thing is either NULL if no space is found or it points
-    // to the space.  Because your code will only have to deal with well-formed
-    // HTTP requests for this lab, you won't need to worry about end_of_thing being
-    // NULL.  But later uses of strstr() might require a conditional, such as when
-    // searching for a colon to determine whether or not a port was specified.
-    //
-    // Copy the first n (end_of_thing - beginning_of_thing) bytes of
-    // req/beginning_of_things to method.
+    
     strncpy(method, beginning_of_thing, end_of_thing - beginning_of_thing);
-    // Move beyond the first space, so beginning_of_thing now points to the start
-    // of the URL.
+    
     beginning_of_thing = end_of_thing + 1;
-    // Continue this pattern to get the URL, and then extract the components of the
-    // URL the same way.
+    
+    end_of_thing = strstr(beginning_of_thing, " ");
+
+    strncpy(hostname, beginning_of_thing, end_of_thing - beginning_of_thing);
+
+    beginning_of_thing = end_of_thing + 1;
+
+    end_of_thing = strstr(beginning_of_thing, "\r\n");
+
+    strncpy(path, beginning_of_thing, end_of_thing - beginning_of_thing);
+
+    beginning_of_thing = end_of_thing + 1;
+
+    end_of_thing = strstr(beginning_of_thing, "\r\n");
+
+    strncpy(port, beginning_of_thing, end_of_thing - beginning_of_thing);
 
     return 1;
 }
