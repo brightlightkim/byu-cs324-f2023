@@ -1,4 +1,11 @@
 #include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <netdb.h>
+#include <pthread.h>
 
 /* Recommended max object size */
 #define MAX_OBJECT_SIZE 102400
