@@ -16,7 +16,7 @@ int complete_request_received(char *);
 int parse_request(char *, char *, char *, char *, char *);
 void test_parser();
 void print_bytes(unsigned char *, int);
-int open_sfd(char *);
+int open_sfd();
 void handle_client(int);
 
 int main(int argc, char *argv[])
@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
     int sfd;
 
     printf("%s\n", user_agent_hdr);
-    sfd = open_sfd(argv[1]);
+    sfd = open_sfd();
     while (1)
     {
         peer_addr_len = sizeof(struct sockaddr_storage);
@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-int open_sfd(char *port)
+int open_sfd()
 {
     struct addrinfo hints;
 	int sfd, s;
@@ -53,7 +53,7 @@ int open_sfd(char *port)
 	hints.ai_addr = NULL;
 	hints.ai_next = NULL;
 
-	if ((s = getaddrinfo(NULL, port, &hints, &result)) < 0) {
+	if ((s = getaddrinfo(NULL, '8080', &hints, &result)) < 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
 		exit(EXIT_FAILURE);
 	}
