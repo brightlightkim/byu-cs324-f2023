@@ -40,49 +40,45 @@ int main(int argc, char *argv[])
 int open_sfd(char *port)
 {
     struct addrinfo hints;
-    int sfd, s;
-    struct addrinfo *result;
+	int sfd, s;
+	struct addrinfo *result;
 
-    memset(&hints, 0, sizeof(struct addrinfo));
+	memset(&hints, 0, sizeof(struct addrinfo));
 
-    hints.ai_family = AF_INET;       /* Choose IPv4 or IPv6 */
-    hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
-    hints.ai_flags = AI_PASSIVE;     /* For wildcard IP address */
-    hints.ai_protocol = 0;           /* Any protocol */
-    hints.ai_canonname = NULL;
-    hints.ai_addr = NULL;
-    hints.ai_next = NULL;
+	hints.ai_family = AF_INET;	/* Choose IPv4 or IPv6 */
+	hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
+	hints.ai_flags = AI_PASSIVE;	/* For wildcard IP address */
+	hints.ai_protocol = 0;		  /* Any protocol */
+	hints.ai_canonname = NULL;
+	hints.ai_addr = NULL;
+	hints.ai_next = NULL;
 
-    
 	if ((s = getaddrinfo(NULL, port, &hints, &result)) < 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
 		exit(EXIT_FAILURE);
 	}
 
-    if ((sfd = socket(result->ai_family, result->ai_socktype, 0)) < 0)
-    {
-        perror("Error creating socket");
-        exit(EXIT_FAILURE);
-    }
+	if ((sfd = socket(result->ai_family, result->ai_socktype, 0)) < 0) {
+		perror("Error creating socket");
+		exit(EXIT_FAILURE);
+	}
 
-    int optval = 1;
-    setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+	int optval = 1;
+	setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
 
-    if (bind(sfd, result->ai_addr, result->ai_addrlen) < 0)
-    {
-        perror("Could not bind");
-        exit(EXIT_FAILURE);
-    }
+	if (bind(sfd, result->ai_addr, result->ai_addrlen) < 0) {
+		perror("Could not bind");
+		exit(EXIT_FAILURE);
+	}
 
-    freeaddrinfo(result); /* No longer needed */
+	freeaddrinfo(result);
 
-    if (listen(sfd, 100) < 0)
-    {
-        perror("Could not listen");
-        exit(EXIT_FAILURE);
-    }
+	if (listen(sfd, 100) < 0) { 
+		perror("Could not listen");
+		exit(EXIT_FAILURE);
+	}
 
-    return sfd;
+	return sfd;
 }
 
 void handle_client(int sfd)
