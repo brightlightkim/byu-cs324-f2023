@@ -75,7 +75,7 @@ int parse_request(char *request, char *method,
     end_of_thing = strstr(beginning_of_thing, "Host: ");
     beginning_of_thing = end_of_thing + 1;
 
-    strncpy(host, beginning_of_thing, end_of_thing - beginning_of_thing);
+    strncpy(hostname, beginning_of_thing, end_of_thing - beginning_of_thing);
 
 
     // end_of_thing = strstr(beginning_of_thing, "\r\n");
