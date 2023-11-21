@@ -20,7 +20,7 @@ void print_bytes(unsigned char *, int);
 int main(int argc, char *argv[])
 {
     // test_parser();
-    int i;
+    // int i;
     char method[16], hostname[64], port[8], path[64];
 
     char *reqs[] = {
