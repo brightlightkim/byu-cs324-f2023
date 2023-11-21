@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
     while (1)
     {
         peer_addr_len = sizeof(struct sockaddr_storage);
-        connfd = accept(sfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
+        accept(sfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
         handle_client(sfd);
     }
 
