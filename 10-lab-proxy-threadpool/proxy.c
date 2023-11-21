@@ -53,6 +53,12 @@ int open_sfd()
     hints.ai_addr = NULL;
     hints.ai_next = NULL;
 
+    if ((result = getaddrinfo(NULL, "8080", &hints, &result)) < 0)
+    {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
+        exit(EXIT_FAILURE);
+    }
+
     if ((sfd = socket(result->ai_family, result->ai_socktype, 0)) < 0)
     {
         perror("Error creating socket");
@@ -96,6 +102,8 @@ void handle_client(int connfd)
     int sfd2, s;
     memset(req, 0, MAX_OBJECT_SIZE);
     memset(buf, 0, MAX_OBJECT_SIZE);
+
+    sfd2 = connfd;
 
     while (1)
     {
