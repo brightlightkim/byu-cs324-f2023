@@ -40,8 +40,7 @@ int main(int argc, char *argv[])
 int open_sfd(char *port)
 {
     struct addrinfo hints;
-    int sfd;
-    // int sfd, s;
+    int sfd, s;
     struct addrinfo *result;
 
     memset(&hints, 0, sizeof(struct addrinfo));
