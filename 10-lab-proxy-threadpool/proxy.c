@@ -22,16 +22,17 @@ void handle_client(int);
 int main(int argc, char *argv[])
 {
     struct sockaddr_storage peer_addr;
-	socklen_t peer_addr_len;
-	int sfd, connfd;
+    socklen_t peer_addr_len;
+    int sfd, connfd;
 
-	printf("%s\n", user_agent_hdr);
-	sfd = open_sfd(argv[1]);
-	while (1) {
-		peer_addr_len = sizeof(struct sockaddr_storage);
-		connfd = accept(sfd, (struct sockaddr *) &peer_addr, &peer_addr_len);
+    printf("%s\n", user_agent_hdr);
+    sfd = open_sfd(argv[1]);
+    while (1)
+    {
+        peer_addr_len = sizeof(struct sockaddr_storage);
+        connfd = accept(sfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
         handle_client(connfd);
-	}
+    }
 
     return 0;
 }
@@ -106,7 +107,10 @@ void handle_client(int connfd)
         }
     }
 
-    print_bytes(*buf, total);
+    printf("METHOD: %s\n", method);
+    printf("HOSTNAME: %s\n", hostname);
+    printf("PORT: %s\n", port);
+    printf("PATH: %s\n", path);
 
     strcat(req, method);
     strcat(req, " ");
@@ -173,13 +177,13 @@ void handle_client(int connfd)
 
     close(sfd2);
 
-    if ((nwrite = send(sfd, buf, total, 0)) != total)
+    if ((nwrite = send(sfd2, buf, total, 0)) != total)
     {
         fprintf(stderr, "Error sending response\n");
     }
     printf("num bytes sent to client: %ld\n", nwrite);
 
-    close(sfd);
+    close(sfd2);
 }
 
 int complete_request_received(char *request)
