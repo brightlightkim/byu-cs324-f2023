@@ -58,7 +58,6 @@ int complete_request_received(char *request)
 int parse_request(char *request, char *method,
                   char *hostname, char *port, char *path)
 {
-    char method[16];
     // The first thing to extract is the method, which is at the beginning of the
     // request, so we point beginning_of_thing to the start of req.
     char *beginning_of_thing = request;
