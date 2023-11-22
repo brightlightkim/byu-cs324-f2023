@@ -24,8 +24,7 @@ int main(int argc, char *argv[])
     // test_parser();
     struct sockaddr_storage peer_addr;
 	socklen_t peer_addr_len;
-	int sfd, connfd, i;
-	pthread_t tid;
+	int sfd, connfd;
 
 	// test_parser();
 	printf("%s\n", user_agent_hdr);
