@@ -103,6 +103,8 @@ void handle_client(int sfd) {
 		}
 	}
 
+    print_bytes((unsigned char *)buf, total);
+
 	printf("Received %d bytes\n",
 			total);
 
