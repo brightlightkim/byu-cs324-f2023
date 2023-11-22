@@ -79,7 +79,7 @@ int open_sfd()
     return sfd;
 }
 
-void handle_client()
+void handle_client(int connfd)
 {
     // Given a newly created file descriptor, returned from accept(), handle a client HTTP request. For now, just have this method do the following:
     // Read from the socket into a buffer until the entire HTTP request has been received. Again, there is no request body in this lab, so this is basically just the end of headers.
@@ -97,7 +97,7 @@ void handle_client()
     memset(req, 0, MAX_OBJECT_SIZE);
     memset(buf, 0, MAX_OBJECT_SIZE);
 
-    int sfd = open_sfd();
+    sfd2 = connfd;
 
     while (1)
     {
