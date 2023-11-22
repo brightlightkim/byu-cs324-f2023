@@ -6,11 +6,33 @@
 #include <sys/types.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <semaphore.h>
 
-/* Recommended max object size */
+/* Recommended max cache and object sizes */
+#define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
+#define NTHREADS  8
+#define SBUFSIZE  5
+
 
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:97.0) Gecko/20100101 Firefox/97.0";
+
+/* $begin sbuft */
+typedef struct {
+    int *buf;          /* Buffer array */         
+    int n;             /* Maximum number of slots */
+    int front;         /* buf[(front+1)%n] is first item */
+    int rear;          /* buf[rear%n] is last item */
+    sem_t mutex;       /* Protects accesses to buf */
+    sem_t slots;       /* Counts available slots */
+    sem_t items;       /* Counts available items */
+} sbuf_t;
+/* $end sbuft */
+
+void sbuf_init(sbuf_t *sp, int n);
+void sbuf_deinit(sbuf_t *sp);
+void sbuf_insert(sbuf_t *sp, int item);
+int sbuf_remove(sbuf_t *sp);
 
 int complete_request_received(char *);
 int parse_request(char *, char *, char *, char *, char *);
@@ -18,26 +40,97 @@ void test_parser();
 void print_bytes(unsigned char *, int);
 int open_sfd();
 void handle_client();
+void *handle_request(void *vargp);
 
-int main(int argc, char *argv[])
-{
-    // test_parser();
-    struct sockaddr_storage peer_addr;
+sbuf_t sbuf; /* Shared buffer of connected descriptors */
+
+int main(int argc, char *argv[]) {
+	struct sockaddr_storage peer_addr;
 	socklen_t peer_addr_len;
-	int sfd, connfd;
+	int sfd, connfd, i;
+	pthread_t tid;
 
 	// test_parser();
 	printf("%s\n", user_agent_hdr);
 	sfd = open_sfd(argv[1]);
-	
-    while (1) {
+	sbuf_init(&sbuf, SBUFSIZE); 
+	for (i = 0; i < NTHREADS; i++)  /* Create worker threads */ 
+		pthread_create(&tid, NULL, handle_request, NULL);
+	while (1) {
 		peer_addr_len = sizeof(struct sockaddr_storage);
 		connfd = accept(sfd, (struct sockaddr *) &peer_addr, &peer_addr_len);
-        handle_client(connfd);
+		sbuf_insert(&sbuf, connfd); /* Insert connfd in buffer */
 	}
 
-    printf("%s\n", user_agent_hdr);
-    return 0;
+	return 0;
+}
+
+/* Create an empty, bounded, shared FIFO buffer with n slots */
+/* $begin sbuf_init */
+void sbuf_init(sbuf_t *sp, int n)
+{
+    sp->buf = calloc(n, sizeof(int)); 
+    sp->n = n;                       /* Buffer holds max of n items */
+    sp->front = sp->rear = 0;        /* Empty buffer iff front == rear */
+    sem_init(&sp->mutex, 0, 1);      /* Binary semaphore for locking */
+    sem_init(&sp->slots, 0, n);      /* Initially, buf has n empty slots */
+    sem_init(&sp->items, 0, 0);      /* Initially, buf has zero data items */
+}
+/* $end sbuf_init */
+
+/* Clean up buffer sp */
+/* $begin sbuf_deinit */
+void sbuf_deinit(sbuf_t *sp)
+{
+    free(sp->buf);
+}
+/* $end sbuf_deinit */
+
+/* Insert item onto the rear of shared buffer sp */
+/* $begin sbuf_insert */
+void sbuf_insert(sbuf_t *sp, int item)
+{
+    printf("before sem_wait()\n"); fflush(stdout);
+    sem_wait(&sp->slots);                          /* Wait for available slot */
+    printf("after sem_wait()\n"); fflush(stdout);
+    sem_wait(&sp->mutex);                          /* Lock the buffer */
+    sp->buf[(++sp->rear)%(sp->n)] = item;   /* Insert the item */
+    
+    sem_post(&sp->mutex);                          /* Unlock the buffer */
+    printf("before sem_post()\n"); fflush(stdout);
+    sem_post(&sp->items);                          /* Announce available item */
+    printf("after sem_post()\n"); fflush(stdout);
+}
+/* $end sbuf_insert */
+
+/* Remove and return the first item from buffer sp */
+/* $begin sbuf_remove */
+int sbuf_remove(sbuf_t *sp)
+{
+    int item;
+    printf("before sem_wait()\n"); fflush(stdout);
+    sem_wait(&sp->items);                          /* Wait for available item */
+    printf("after sem_wait()\n"); fflush(stdout);
+    sem_wait(&sp->mutex);                          /* Lock the buffer */
+    item = sp->buf[(++sp->front)%(sp->n)];  /* Remove the item */
+    sem_post(&sp->mutex);                          /* Unlock the buffer */
+    printf("before sem_post()\n"); fflush(stdout);
+    sem_post(&sp->slots);                          /* Announce available slot */
+    printf("after sem_post()\n"); fflush(stdout);
+    return item;
+}
+/* $end sbuf_remove */
+/* $end sbufc */
+
+
+/* Thread routine */
+void *handle_request(void *vargp) {  
+	pthread_detach(pthread_self()); 
+	while (1) { 
+		int connfd = sbuf_remove(&sbuf); /* Remove connfd from buffer */ //line:conc:pre:removeconnfd
+		handle_client(connfd);                /* Service client */
+		close(connfd);
+	}
 }
 
 int open_sfd(char *port)
@@ -103,7 +196,7 @@ void handle_client(int sfd) {
 		}
 	}
 
-    print_bytes((unsigned char *)buf, total);
+    // print_bytes((unsigned char *)buf, total);
 
 	printf("Received %d bytes\n",
 			total);
