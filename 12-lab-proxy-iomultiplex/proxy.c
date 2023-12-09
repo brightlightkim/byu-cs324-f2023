@@ -1,301 +1,521 @@
+
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/socket.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <sys/epoll.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <netdb.h>
-#include <pthread.h>
-#include <semaphore.h>
+#include <fcntl.h>
+#include <signal.h>
 
-/* Recommended max object size */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
-#define NTHREADS 8
-#define SBUFSIZE 5
+#define MAXEVENTS 10
 
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:97.0) Gecko/20100101 Firefox/97.0";
+static int verbose = 0;
+static int set = 0;
 
-/* $begin sbuft */
-typedef struct
+struct client_info
 {
-	int *buf;	 /* Buffer array */
-	int n;		 /* Maximum number of slots */
-	int front;	 /* buf[(front+1)%n] is first item */
-	int rear;	 /* buf[rear%n] is last item */
-	sem_t mutex; /* Protects accesses to buf */
-	sem_t slots; /* Counts available slots */
-	sem_t items; /* Counts available items */
-} sbuf_t;
-/* $end sbuft */
+	int cfd;
+	int state;
+	int sfd;
+	char desc[1024];
+	char cRecv[2500];
+	char sRecv[MAX_OBJECT_SIZE];
+	char sSend[2500];
+	int cBytesRead;
+	int sBytesToSend;
+	int sBytesSent;
+	int sBytesRead;
+	int cBytesSent;
+};
 
-void sbuf_init(sbuf_t *sp, int n);
-void sbuf_deinit(sbuf_t *sp);
-void sbuf_insert(sbuf_t *sp, int item);
-int sbuf_remove(sbuf_t *sp);
+void sigint_handler(int signum)
+{
+	printf("In sigint_handler\n");
+	fflush(stdout);
+	set = 1;
+}
 
-int complete_request_received(char *);
+int open_lfd(struct sockaddr_in);
 int parse_request(char *, char *, char *, char *, char *);
+int getSSFD(char *, char *);
 void test_parser();
 void print_bytes(unsigned char *, int);
+void handle_new_clients(int, struct client_info *, struct epoll_event);
+void handle_client(int, struct client_info *, struct epoll_event);
+void getServerRequest(char *, char *, char *, char *, char *);
+void deregister(struct client_info *);
 
-int open_sfd();
-void handle_client();
-void *handle_request(void *vargp);
-
-sbuf_t sbuf; /* Shared buffer of connected descriptors */
-
-int main(int argc, char *argv[])
+int main(int argc, char **argv)
 {
-	struct sockaddr_storage peer_addr;
-	socklen_t peer_addr_len;
-	int sfd, connfd, i;
-	pthread_t tid;
+	struct sigaction sigact;
+	struct sockaddr_in addr;
+	struct client_info *listener;
+	struct client_info *active_client;
+	struct epoll_event event;
+	struct epoll_event *events;
+	int efd, listen_socket, n;
 
-	// test_parser();
-	printf("%s\n", user_agent_hdr);
-	sfd = open_sfd(argv[1]);
-	sbuf_init(&sbuf, SBUFSIZE);
-	for (i = 0; i < NTHREADS; i++) /* Create worker threads */
-		pthread_create(&tid, NULL, handle_request, NULL);
-	while (1)
+	if (argv[2] != NULL)
 	{
-		peer_addr_len = sizeof(struct sockaddr_storage);
-		connfd = accept(sfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
-		sbuf_insert(&sbuf, connfd); /* Insert connfd in buffer */
+		if (!strcmp(argv[2], "-v"))
+		{
+			verbose = 1;
+		}
+	}
+	if (argv[1] == NULL)
+	{
+		printf("Need port number as first argument. Exiting...\n");
+		fflush(stdout);
+		exit(1);
 	}
 
+	sigact.sa_flags = SA_RESTART;
+	sigact.sa_handler = sigint_handler;
+	sigaction(SIGINT, &sigact, NULL);
+
+	if ((efd = epoll_create1(0)) < 0)
+	{
+		fprintf(stderr, "error creating epoll fd\n");
+		exit(1);
+	}
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(atoi(argv[1]));
+	listen_socket = open_lfd(addr);
+
+	// allocate memory for a new struct client_info, and populate it with info for the listening socket
+	listener = calloc(1, sizeof(struct client_info));
+	listener->cfd = listen_socket;
+	sprintf(listener->desc, "Listen file descriptor (accepts new clients)");
+
+	// register the listening file descriptor for incoming events using edge-triggered monitoring
+	event.data.ptr = listener;
+	event.events = EPOLLIN | EPOLLET;
+	if (epoll_ctl(efd, EPOLL_CTL_ADD, listener->cfd, &event) < 0)
+	{
+		fprintf(stderr, "error adding event\n");
+		exit(1);
+	}
+
+	events = calloc(MAXEVENTS, sizeof(struct epoll_event));
+
+	while (1)
+	{
+		if ((n = epoll_wait(efd, events, MAXEVENTS, 1)) < 0)
+		{
+			fprintf(stderr, "error adding event\n");
+			exit(1);
+		}
+
+		if (n == 0 && set == 1)
+		{
+			printf("int handler called. breaking.\n");
+			fflush(stdout);
+			break;
+		}
+
+		for (int i = 0; i < n; i++)
+		{
+			active_client = (struct client_info *)(events[i].data.ptr);
+
+			if (verbose)
+			{
+				printf("New event for %s\n", active_client->desc);
+				fflush(stdout);
+			}
+
+			if ((events[i].events & EPOLLERR) || (events[i].events & EPOLLHUP) || (events[i].events & EPOLLRDHUP))
+			{
+				fprintf(stderr, "epoll error on %s\n", active_client->desc);
+				deregister(active_client);
+			}
+
+			if (listener->cfd == active_client->cfd)
+			{
+				handle_new_clients(efd, active_client, event);
+			}
+			else
+			{
+				handle_client(efd, active_client, event);
+			}
+		}
+	}
+	free(listener);
+	free(events);
 	return 0;
 }
 
-/* Create an empty, bounded, shared FIFO buffer with n slots */
-/* $begin sbuf_init */
-void sbuf_init(sbuf_t *sp, int n)
+void handle_client(int efd, struct client_info *client, struct epoll_event event)
 {
-	sp->buf = calloc(n, sizeof(int));
-	sp->n = n;					/* Buffer holds max of n items */
-	sp->front = sp->rear = 0;	/* Empty buffer iff front == rear */
-	sem_init(&sp->mutex, 0, 1); /* Binary semaphore for locking */
-	sem_init(&sp->slots, 0, n); /* Initially, buf has n empty slots */
-	sem_init(&sp->items, 0, 0); /* Initially, buf has zero data items */
-}
-/* $end sbuf_init */
+	char buf[2000];
 
-/* Clean up buffer sp */
-/* $begin sbuf_deinit */
-void sbuf_deinit(sbuf_t *sp)
-{
-	free(sp->buf);
-}
-/* $end sbuf_deinit */
-
-/* Insert item onto the rear of shared buffer sp */
-/* $begin sbuf_insert */
-void sbuf_insert(sbuf_t *sp, int item)
-{
-	printf("before sem_wait()\n");
-	fflush(stdout);
-	sem_wait(&sp->slots); /* Wait for available slot */
-	printf("after sem_wait()\n");
-	fflush(stdout);
-	sem_wait(&sp->mutex);					/* Lock the buffer */
-	sp->buf[(++sp->rear) % (sp->n)] = item; /* Insert the item */
-
-	sem_post(&sp->mutex); /* Unlock the buffer */
-	printf("before sem_post()\n");
-	fflush(stdout);
-	sem_post(&sp->items); /* Announce available item */
-	printf("after sem_post()\n");
-	fflush(stdout);
-}
-/* $end sbuf_insert */
-
-/* Remove and return the first item from buffer sp */
-/* $begin sbuf_remove */
-int sbuf_remove(sbuf_t *sp)
-{
-	int item;
-	printf("before sem_wait()\n");
-	fflush(stdout);
-	sem_wait(&sp->items); /* Wait for available item */
-	printf("after sem_wait()\n");
-	fflush(stdout);
-	sem_wait(&sp->mutex);					 /* Lock the buffer */
-	item = sp->buf[(++sp->front) % (sp->n)]; /* Remove the item */
-	sem_post(&sp->mutex);					 /* Unlock the buffer */
-	printf("before sem_post()\n");
-	fflush(stdout);
-	sem_post(&sp->slots); /* Announce available slot */
-	printf("after sem_post()\n");
-	fflush(stdout);
-	return item;
-}
-/* $end sbuf_remove */
-/* $end sbufc */
-
-/* Thread routine */
-void *handle_request(void *vargp)
-{
-	pthread_detach(pthread_self());
-	while (1)
+	if (verbose)
 	{
-		int connfd = sbuf_remove(&sbuf); /* Remove connfd from buffer */ // line:conc:pre:removeconnfd
-		handle_client(connfd);											 /* Service client */
-		close(connfd);
+		printf("In handle client\nClient description and state:\n%s\nstate: %d\n", client->desc, client->state);
+		fflush(stdout);
+	}
+
+	if (client->state == 0)
+	{ // Read request
+		char method[32], hostname[128], port[16], path[128], headers[4096];
+		int bytesRead;
+
+		if (client->cBytesRead == 0)
+		{
+			memset(buf, '\0', sizeof(buf));
+			memset(method, '\0', sizeof(method));
+			memset(hostname, '\0', sizeof(hostname));
+			memset(port, '\0', sizeof(port));
+			memset(path, '\0', sizeof(path));
+			memset(headers, '\0', sizeof(headers));
+		}
+
+		bytesRead = -1;
+		while (strstr(client->cRecv, "\r\n\r\n") == NULL && bytesRead != 0)
+		{
+			memset(buf, '\0', sizeof(buf));
+			if ((bytesRead = recv(client->cfd, buf, sizeof(buf), 0)) == -1)
+			{
+				if (errno == EAGAIN || errno == EWOULDBLOCK)
+				{
+					return;
+				}
+				fprintf(stderr, "recv: %s (%d)\n", strerror(errno), errno);
+				fflush(stderr);
+				deregister(client);
+			}
+			memcpy(client->cRecv + client->cBytesRead, buf, bytesRead);
+			client->cBytesRead += bytesRead;
+		}
+		if (bytesRead == 0)
+		{
+			memcpy(client->cRecv + client->cBytesRead, "\r\n\r\n", 8);
+			printf("Had to add rn\n");
+			fflush(stdout);
+		}
+
+		if (!parse_request(client->cRecv, method, hostname, port, path, headers))
+		{
+			printf("REQUEST INCOMPLETE... Exiting\n");
+			fflush(stdout);
+			exit(1);
+		}
+
+		getServerRequest(method, hostname, port, path, client->sSend);
+		if (verbose)
+		{
+			printf("serverRequest after all strcpy's:\n%s\nClient #: %d\n", client->sSend, client->cfd);
+			fflush(stdout);
+		}
+
+		client->sBytesToSend = strlen(client->sSend);
+		client->sfd = getSSFD(hostname, port); // Server socket file-descriptor
+		event.data.ptr = client;
+		event.events = EPOLLOUT | EPOLLET;
+		if (epoll_ctl(efd, EPOLL_CTL_ADD, client->sfd, &event) < 0)
+		{
+			fprintf(stderr, "error adding event\n");
+			exit(1);
+		}
+		client->state = 1;
+		return;
+	}
+
+	else if (client->state == 1)
+	{ // Send request
+		int bytesSent;
+
+		bytesSent = 0;
+		while (client->sBytesToSend != client->sBytesSent)
+		{
+			if ((bytesSent = write(client->sfd, client->sSend + client->sBytesSent, strlen(client->sSend) - client->sBytesSent)) == -1)
+			{
+				if (errno == EAGAIN || errno == EWOULDBLOCK)
+				{
+					return;
+				}
+				fprintf(stderr, "send: %s (%d)\n", strerror(errno), errno);
+				fflush(stderr);
+				deregister(client);
+			}
+			client->sBytesSent += bytesSent;
+		}
+
+		event.data.ptr = client;
+		event.events = EPOLLIN | EPOLLET;
+		if (epoll_ctl(efd, EPOLL_CTL_MOD, client->sfd, &event) < 0)
+		{
+			fprintf(stderr, "error adding event\n");
+			exit(1);
+		}
+		client->state = 2;
+		return;
+	}
+
+	else if (client->state == 2)
+	{ // Read response
+		int bytesRead;
+
+		bytesRead = -1;
+		while (bytesRead != 0)
+		{
+			memset(buf, '\0', sizeof(buf));
+			if ((bytesRead = recv(client->sfd, buf, sizeof(buf), 0)) == -1)
+			{
+				if (errno == EAGAIN || errno == EWOULDBLOCK)
+				{
+					return;
+				}
+				fprintf(stderr, "recv ERRORRRRRR: %s (%d)\n", strerror(errno), errno);
+				fflush(stderr);
+				deregister(client);
+			}
+			if (verbose)
+			{
+				printf("\nClient #: %d\nBytesRead: %d\n\nTotal request so far:\n%s\n\n", client->cfd, bytesRead, client->sRecv);
+				fflush(stdout);
+			}
+			memcpy(client->sRecv + client->sBytesRead, buf, bytesRead);
+			client->sBytesRead += bytesRead;
+		}
+
+		if (verbose)
+		{
+			printf("serverResponse after recv:\n%s\nlength of serverResponse: %ld\n", client->sRecv, strlen(client->sRecv));
+			printf("client->sBytesRead: %d\n", client->sBytesRead);
+			fflush(stdout);
+		}
+
+		close(client->sfd);
+		event.data.ptr = client;
+		event.events = EPOLLOUT | EPOLLET;
+		if (epoll_ctl(efd, EPOLL_CTL_MOD, client->cfd, &event) < 0)
+		{
+			fprintf(stderr, "error adding event\n");
+			exit(1);
+		}
+		client->state = 3;
+		return;
+	}
+
+	else if (client->state == 3)
+	{ // Send response
+		int bytesSent;
+
+		bytesSent = 0;
+		while (client->cBytesSent != client->sBytesRead)
+		{
+			if ((bytesSent = write(client->cfd, client->sRecv + client->cBytesSent, client->sBytesRead - client->cBytesSent)) == -1)
+			{
+				if (errno == EAGAIN || errno == EWOULDBLOCK)
+				{
+					return;
+				}
+				fprintf(stderr, "send: %s (%d)\n", strerror(errno), errno);
+				fflush(stderr);
+				deregister(client);
+			}
+			client->cBytesSent += bytesSent;
+		}
+
+		close(client->cfd);
+		free(client);
+		if (verbose)
+		{
+			printf("cfd closed. client freed. Success!\n");
+			fflush(stdout);
+		}
+		return;
 	}
 }
 
-int open_sfd(char *port)
+void handle_new_clients(int efd, struct client_info *listener, struct epoll_event event)
+{
+	int connfd;
+	struct client_info *new_client;
+	struct sockaddr_storage clientaddr;
+	socklen_t clientlen = sizeof(struct sockaddr_storage);
+
+	// if (verbose) { printf("In handle_new_clients\n"); fflush(stdout); }
+
+	while (1)
+	{
+		connfd = accept(listener->cfd, (struct sockaddr *)&clientaddr, &clientlen);
+
+		if (connfd < 0)
+		{
+			if (errno == EWOULDBLOCK || errno == EAGAIN)
+			{
+				break;
+			} // No more clients ready to accept
+			else
+			{
+				perror("accept");
+				exit(EXIT_FAILURE);
+			} // Error occured
+		}
+
+		// set client file descriptor non-blocking
+		if (fcntl(connfd, F_SETFL, fcntl(connfd, F_GETFL, 0) | O_NONBLOCK) < 0)
+		{
+			fprintf(stderr, "error setting socket option\n");
+			exit(1);
+		}
+
+		// allocate memory for a new struct client_info, and populate it with info for the new client
+		new_client = (struct client_info *)calloc(1, sizeof(struct client_info));
+		new_client->cfd = connfd;
+		sprintf(new_client->desc, "Client with file descriptor %d", connfd);
+
+		// register the client file descriptor for incoming events using edge-triggered monitoring
+		event.data.ptr = new_client;
+		event.events = EPOLLIN | EPOLLET;
+		if (epoll_ctl(efd, EPOLL_CTL_ADD, connfd, &event) < 0)
+		{
+			fprintf(stderr, "error adding event\n");
+			exit(1);
+		}
+	}
+}
+
+int open_lfd(struct sockaddr_in addr)
+{
+	int lfd = socket(AF_INET, SOCK_STREAM, 0);
+	int optval = 1;
+	setsockopt(lfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+
+	// set listening file descriptor non-blocking
+	if (fcntl(lfd, F_SETFL, fcntl(lfd, F_GETFL, 0) | O_NONBLOCK) < 0)
+	{
+		fprintf(stderr, "error setting socket option\n");
+		exit(1);
+	}
+
+	bind(lfd, (struct sockaddr *)&addr, sizeof(addr));
+	listen(lfd, MAXEVENTS);
+
+	return lfd;
+}
+
+void deregister(struct client_info *client)
+{
+	close(client->cfd);
+	close(client->sfd);
+	free(client);
+}
+
+int getSSFD(char *hostname, char *port)
 {
 	struct addrinfo hints;
-	int sfd, s;
-	struct addrinfo *result;
+	struct addrinfo *result, *rp;
+	int ssfd, s;
+
+	if (verbose)
+	{
+		printf("Entering getSSFD\n");
+		fflush(stdout);
+	}
 
 	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = 0;
+	hints.ai_protocol = 0;
 
-	hints.ai_family = AF_INET;		 /* Choose IPv4 or IPv6 */
-	hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
-	hints.ai_flags = AI_PASSIVE;	 /* For wildcard IP address */
-	hints.ai_protocol = 0;			 /* Any protocol */
-	hints.ai_canonname = NULL;
-	hints.ai_addr = NULL;
-	hints.ai_next = NULL;
+	// if (verbose) { printf("hostname and port before getaddrinfo:\n%s:%s\n", hostname, port); fflush(stdout); }
 
-	if ((s = getaddrinfo(NULL, port, &hints, &result)) < 0)
+	s = getaddrinfo(hostname, port, &hints, &result);
+	if (s != 0)
 	{
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-		exit(EXIT_FAILURE);
+		exit(2);
 	}
 
-	if ((sfd = socket(result->ai_family, result->ai_socktype, 0)) < 0)
+	for (rp = result; rp != NULL; rp = rp->ai_next)
 	{
-		perror("Error creating socket");
-		exit(EXIT_FAILURE);
-	}
-
-	int optval = 1;
-	setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
-
-	if (bind(sfd, result->ai_addr, result->ai_addrlen) < 0)
-	{
-		perror("Could not bind");
-		exit(EXIT_FAILURE);
-	}
-
-	freeaddrinfo(result); /* No longer needed */
-
-	if (listen(sfd, 100) < 0)
-	{
-		perror("Could not listen");
-		exit(EXIT_FAILURE);
-	}
-
-	return sfd;
-}
-
-void handle_client(int sfd)
-{
-	ssize_t nread, nwrite;
-	char buf[MAX_OBJECT_SIZE], req[MAX_OBJECT_SIZE];
-	char method[16], hostname[64], port[8], path[64], req_headers[1024];
-	int total = 0;
-	struct addrinfo hints;
-	struct addrinfo *result;
-	int sfd2, s;
-	memset(req, 0, MAX_OBJECT_SIZE);
-	memset(buf, 0, MAX_OBJECT_SIZE);
-
-	while (1)
-	{
-		nread = recv(sfd, buf + total, sizeof(buf) - total, 0);
-		total += nread;
-		if (parse_request(buf, method, hostname, port, path))
+		ssfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+		if (ssfd == -1)
+		{
+			continue;
+		}
+		if (connect(ssfd, rp->ai_addr, rp->ai_addrlen) != -1)
 		{
 			break;
 		}
+		printf("Connection failed... closing ssfd\n");
+		close(ssfd);
 	}
 
-	// print_bytes((unsigned char *)buf, total);
-
-	printf("Received %d bytes\n",
-		   total);
-
-	printf("METHOD: %s\n", method);
-	printf("HOSTNAME: %s\n", hostname);
-	printf("PORT: %s\n", port);
-
-	strcat(req, method);
-	strcat(req, " ");
-	strcat(req, path);
-	strcat(req, " HTTP/1.0\r\n");
-	if (strcmp(port, "80") == 0)
-	{
-		sprintf(req_headers, "Host: %s\r\n%s\r\n",
-				hostname, user_agent_hdr);
-	}
-	else
-	{
-		sprintf(req_headers, "Host: %s:%s\r\n%s\r\n",
-				hostname, port, user_agent_hdr);
-	}
-	strcat(req_headers, "Connection: close\r\n");
-	strcat(req_headers, "Proxy-Connection: close\r\n\r\n");
-	strcat(req, req_headers);
-	printf("%s\n", req);
-
-	// communicate with the HTTP server
-	hints.ai_family = AF_INET;		 /* Choose IPv4 or IPv6 */
-	hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
-	hints.ai_flags = AI_PASSIVE;	 /* For wildcard IP address */
-	hints.ai_protocol = 0;			 /* Any protocol */
-	hints.ai_canonname = NULL;
-	hints.ai_addr = NULL;
-	hints.ai_next = NULL;
-
-	if ((s = getaddrinfo(hostname, port, &hints, &result)) < 0)
-	{
-		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-		exit(EXIT_FAILURE);
-	}
-
-	if ((sfd2 = socket(result->ai_family, result->ai_socktype, 0)) < 0)
-	{
-		perror("Error creating socket");
-		exit(EXIT_FAILURE);
-	}
-
-	if (connect(sfd2, result->ai_addr, result->ai_addrlen) < 0)
+	if (rp == NULL)
 	{
 		fprintf(stderr, "Could not connect\n");
-		exit(EXIT_FAILURE);
+		exit(3);
 	}
 
-	freeaddrinfo(result); /* No longer needed */
-
-	if ((nwrite = send(sfd2, req, strlen(req), 0)) != strlen(req))
+	if (fcntl(ssfd, F_SETFL, fcntl(ssfd, F_GETFL, 0) | O_NONBLOCK) < 0)
 	{
-		fprintf(stderr, "Error sending response\n");
-	};
-	printf("num bytes sent to server: %ld\n", nwrite);
-
-	total = 0;
-	memset(buf, 0, MAX_OBJECT_SIZE);
-	while ((nread = recv(sfd2, buf + total, sizeof(buf) - total, 0)))
-	{
-		total += nread;
+		fprintf(stderr, "error setting socket option\n");
+		exit(1);
 	}
-	printf("bytes received from the server:\n %s\n", buf);
-	printf("num bytes recieved from server: %d\n", total);
 
-	close(sfd2);
+	freeaddrinfo(result);
+	return ssfd;
+}
 
-	if ((nwrite = send(sfd, buf, total, 0)) != total)
+void getServerRequest(char *method, char *hostname, char *port, char *path, char *serverRequest)
+{
+	char *con = "Connection: close\r\n";
+	char *pcon = "Proxy-Connection: close\r\n\r\n";
+	char *version = "HTTP/1.0\r\n";
+	char *line = "\r\n";
+	char *p = serverRequest;
+
+	if (verbose)
 	{
-		fprintf(stderr, "Error sending response\n");
+		printf("Entered getServerRequest\n");
 	}
-	printf("num bytes sent to client: %ld\n", nwrite);
 
-	close(sfd);
+	strcpy(p, method);
+	p += strlen(method);
+	strcpy(p, " ");
+	p += 1;
+	strcpy(p, path);
+	p += strlen(path);
+	strcpy(p, " ");
+	p += 1;
+	strcpy(p, version);
+	p += strlen(version);
+	strcpy(p, "Host: ");
+	p += 6;
+	strcpy(p, hostname);
+	p += strlen(hostname);
+
+	if (strcmp(port, "80"))
+	{
+		strcpy(p, ":");
+		p += 1;
+		strcpy(p, port);
+		p += strlen(port);
+	}
+
+	strcpy(p, line);
+	p += strlen(line);
+	strcpy(p, user_agent_hdr);
+	p += strlen(user_agent_hdr);
+	strcpy(p, line);
+	p += strlen(line);
+	strcpy(p, con);
+	p += strlen(con);
+	strcpy(p, pcon);
 }
 
 int complete_request_received(char *request)
