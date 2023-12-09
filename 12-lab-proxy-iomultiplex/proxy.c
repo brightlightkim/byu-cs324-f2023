@@ -166,7 +166,7 @@ void handle_client(int efd, struct client_info *client, struct epoll_event event
 
 	if (client->state == 0)
 	{ // Read request
-		char method[32], hostname[128], port[16], path[128], headers[4096];
+		char method[32], hostname[128], port[16], path[128];
 		int bytesRead;
 
 		if (client->cBytesRead == 0)
@@ -176,7 +176,6 @@ void handle_client(int efd, struct client_info *client, struct epoll_event event
 			memset(hostname, '\0', sizeof(hostname));
 			memset(port, '\0', sizeof(port));
 			memset(path, '\0', sizeof(path));
-			memset(headers, '\0', sizeof(headers));
 		}
 
 		bytesRead = -1;
@@ -203,7 +202,7 @@ void handle_client(int efd, struct client_info *client, struct epoll_event event
 			fflush(stdout);
 		}
 
-		if (!parse_request(client->cRecv, method, hostname, port, path, headers))
+		if (!parse_request(client->cRecv, method, hostname, port, path))
 		{
 			printf("REQUEST INCOMPLETE... Exiting\n");
 			fflush(stdout);
